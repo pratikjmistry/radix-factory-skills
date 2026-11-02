@@ -1,0 +1,61 @@
+{
+  "skill_name": "write-prd",
+  "trigger": {
+    "positive": [
+      {
+        "prompt": "We've finished the stakeholder interviews, turn the notes into a PRD",
+        "top_k": 1
+      },
+      {
+        "prompt": "Write up the product requirements document for the booking app so it's ready for sign-off",
+        "top_k": 3
+      },
+      {
+        "prompt": "Check our PRD for vague acceptance criteria before the architect starts",
+        "top_k": 3
+      },
+      {
+        "prompt": "Add two new functional requirements to docs/PRD.md without breaking the existing IDs",
+        "top_k": 3
+      }
+    ],
+    "negative": [
+      {
+        "prompt": "I have a fuzzy idea for an app, help me explore some directions",
+        "owner": "idea-refine"
+      },
+      {
+        "prompt": "Interview me about what I actually want before we build anything",
+        "owner": "interview-me"
+      },
+      {
+        "prompt": "Break the approved spec into small, ordered implementation tasks",
+        "owner": "planning-and-task-breakdown"
+      }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "kind": "execution",
+      "prompt": "Write the PRD from the elicitation notes in docs/notes/elicitation-notes.md. Nobody is available to answer questions right now.",
+      "expected_output": "docs/PRD.md following the template, with FR and BAC IDs, product-level boundaries, the unresolved retention question recorded as blocking, and Status not set to Approved",
+      "files": [
+        "write-prd"
+      ],
+      "expectations": [
+        "docs/PRD.md exists and contains the template's numbered sections, including Shared Contract and Boundaries",
+        "Every FR row has at least one BAC that links to it by ID",
+        "No BAC relies on the words 'fast', 'easy' or 'secure' without a measurable condition; vague asks from the notes are quantified or recorded as open questions",
+        "No FR or BAC names Postgres, React or any other technology",
+        "The booking-history retention question is recorded as a blocking open question with an owner",
+        "The retention and privacy-law questions are both marked blocking, and every blocking question names what its answer could change: an existing FR, BAC or Shared Contract item by ID, or a proposed new FR it could add (for example 'Blocks: new FR — ...'). Questions whose answer would not change any of these are non-blocking with an owner.",
+        "Status is not 'Approved' and no approval date is filled in; with a blocking question open, Status is 'In Review'",
+        "The Approvals table lists the client stakeholder and the delivery lead from the notes",
+        "The health-data privacy law appears as a Non-Negotiable NFR in the Shared Contract, and an open question owned by the client's legal team asks which articles apply",
+        "Payments, video consultations and SMS are listed under Out of Scope and none of them appears as an FR",
+        "The agent reports checklist results by item ID rather than claiming the PRD is done"
+      ]
+    }
+  ]
+}

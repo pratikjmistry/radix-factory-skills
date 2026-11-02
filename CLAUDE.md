@@ -16,7 +16,7 @@ docs/         → Setup guides for different tools
 
 ## Skills by Phase
 
-**Define:** interview-me, idea-refine
+**Define:** interview-me, idea-refine, write-prd
 **Plan:** planning-and-task-breakdown
 **Build:** incremental-implementation, test-driven-development, context-engineering, source-driven-development, doubt-driven-development, frontend-ui-engineering, api-and-interface-design
 **Verify:** browser-testing-with-devtools, debugging-and-error-recovery

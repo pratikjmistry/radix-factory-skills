@@ -230,6 +230,7 @@ The pack includes 24 skills total — 23 lifecycle skills plus the `using-agent-
 |-------|-------------|----------|
 | [interview-me](skills/interview-me/SKILL.md) | One-question-at-a-time interview that extracts what the user actually wants instead of what they think they should want, until ~95% confidence | The ask is underspecified, or the user invokes "interview me" / "grill me" |
 | [idea-refine](skills/idea-refine/SKILL.md) | Structured divergent/convergent thinking to turn vague ideas into concrete proposals | You have a rough concept that needs exploration |
+| [write-prd](skills/write-prd/SKILL.md) | Writes `docs/PRD.md` from a template with traceable FR and acceptance-criterion IDs, product-level boundaries, and a "clear to the dot" checklist before human approval | Elicited requirements need to become a PRD, or a PRD must be checked for ambiguity before design |
 | [constraint-driven-development](skills/constraint-driven-development/SKILL.md) | Interviews you for a quality bar with sane default thresholds, writes CONSTRAINTS.md, places each check by cost, and catches agents silencing checks or skipping tests to get green | No standards are written down, or an agent is producing more than anyone reads |
 
 ### Plan - Break it down
