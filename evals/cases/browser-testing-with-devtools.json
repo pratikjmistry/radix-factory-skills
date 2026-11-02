@@ -17,8 +17,8 @@
     ],
     "negative": [
       {
-        "prompt": "Write a spec for the new billing feature before we start",
-        "owner": "spec-driven-development"
+        "prompt": "Help me turn this rough product idea into a few concrete proposals",
+        "owner": "idea-refine"
       },
       {
         "prompt": "Break this PRD into ordered implementation tasks",

@@ -4,12 +4,11 @@
  *
  * Guards the spec -> plan -> build pipeline against silent artifact-path drift.
  *
- * The `/spec` and `/plan` commands (producers) write their artifacts to a set
- * of paths that the `/build` command and the spec/plan skills (consumers) read
- * back. When a producer moves an artifact without updating the consumers — as
- * in PR #93, which pointed `/spec` and `/plan` at docs/features/[name]/ while
- * `/build` still required SPEC.md and tasks/plan.md — the pipeline breaks, and
- * nothing else in CI catches it (command parity only compares descriptions).
+ * The planning skill and the setup docs name the paths where the spec, plan
+ * and task list live. If one file moves an artifact (for example to
+ * docs/features/[name]/) while the others keep the old path, agents following
+ * different files read and write different locations, and nothing else in CI
+ * catches it.
  *
  * This validator enforces one canonical set of spec/plan/todo artifact paths
  * across every file in the pipeline. Changing the convention means updating
@@ -33,34 +32,16 @@ const ROOT = path.resolve(__dirname, '..');
 // file paths the pipeline files may reference. To change the convention, edit
 // this list and update every guarded file to match — CI enforces the pairing.
 const ARTIFACT_ALLOWLIST = new Set([
-  'SPEC.md',        // spec, project root (produced by /spec, read by /build)
-  'docs/SPEC.md',   // spec, alternate location accepted by /build
-  'tasks/plan.md',  // plan (produced by /plan, read by /build)
-  'tasks/todo.md',  // task list (produced by /plan)
+  'SPEC.md',        // spec, project root
+  'docs/SPEC.md',   // spec, alternate location
+  'tasks/plan.md',  // plan
+  'tasks/todo.md',  // task list
 ]);
 
 // The files that make up the spec -> plan -> build pipeline. Absent files are
 // skipped, not failed: this validator checks path consistency, not presence.
-//
-// The command bodies exist once per host surface (validate-commands.js checks
-// that the three sets stay in step on descriptions, but their prompt bodies
-// are allowed to differ), so a producer or consumer can drift on one surface
-// while the Claude Code copy stays correct. Every surface is guarded here.
 const GUARDED_FILES = [
-  // Claude Code commands
-  '.claude/commands/spec.md',
-  '.claude/commands/plan.md',
-  '.claude/commands/build.md',
-  // Gemini CLI commands
-  '.gemini/commands/spec.toml',
-  '.gemini/commands/planning.toml',
-  '.gemini/commands/build.toml',
-  // Root command set (Antigravity, Codex, and other TOML-based hosts)
-  'commands/spec.toml',
-  'commands/planning.toml',
-  'commands/build.toml',
-  // Skills the commands invoke
-  'skills/spec-driven-development/SKILL.md',
+  // Skills that write or read the artifacts
   'skills/planning-and-task-breakdown/SKILL.md',
   // Docs that tell users where the artifacts live
   'docs/getting-started.md',

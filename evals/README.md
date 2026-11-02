@@ -15,7 +15,7 @@ What neither provides is a **deterministic, CI-safe** check for a multi-skill *c
 
 | Tier | What it checks | Runs | Cost |
 |---|---|---|---|
-| 1. Structural | Frontmatter, naming, required sections, layout and line budget, `references/` links, command parity, artifact paths, manifest versions | CI (`validate-skills.js`, `validate-reference-links.js`, `validate-commands.js`, `validate-artifact-paths.js`, `validate-versions.js`) | Free |
+| 1. Structural | Frontmatter, naming, required sections, layout and line budget, `references/` links, artifact paths, manifest versions | CI (`validate-skills.js`, `validate-reference-links.js`, `validate-artifact-paths.js`, `validate-versions.js`) | Free |
 | 2. Trigger & routing | Positive prompts rank their skill top-k; negative prompts don't; no two descriptions near-collide | CI (`run-evals.js --min-rank1 95`) | Free |
 | 3. Behavioral | An agent following the skill satisfies its `expectations[]` | On demand (`run-evals.js --behavioral`) | Tokens |
 

@@ -61,10 +61,7 @@ node scripts/validate-reference-links.js
 # Every plugin manifest carries the same version
 node scripts/validate-versions.js
 
-# Command parity and description sync across the three command directories
-node scripts/validate-commands.js
-
-# Spec/plan/todo artifact paths agree across every command surface and the docs
+# Spec/plan/todo artifact paths agree across the planning skill and the docs
 node scripts/validate-artifact-paths.js
 
 # Unit tests for the validators and the eval runner
@@ -89,7 +86,7 @@ CI runs this set on Ubuntu, then runs the validators and unit tests again on mac
 
 The three eval tiers are worth understanding even if you never touch the harness, because a red Tier 2 usually means *fix your skill's description*, not the eval: Tier 2 is a lexical approximation of routing (stemmed TF-IDF over descriptions), and its two target failure modes are a description missing the vocabulary users actually say, and an over-broad description that outranks the right skill. The full design, schema, and trust-level rules are in [evals/README.md](../evals/README.md).
 
-Run the relevant subset before every PR. A PR that arrives green through Tier 1 + Tier 2 + command parity is reviewable; one that doesn't will bounce on mechanics before anyone reads the content.
+Run the relevant subset before every PR. A PR that arrives green through Tier 1 + Tier 2 + artifact paths is reviewable; one that doesn't will bounce on mechanics before anyone reads the content.
 
 ## 4. Contribution paths
 
@@ -117,7 +114,7 @@ One point worth internalizing rather than looking up: when writing trigger promp
 
 - [ ] Tier 1 green: `node scripts/validate-skills.js`, plus `node scripts/validate-reference-links.js` if you touched a skill that links to `references/`
 - [ ] Tier 2 green the way CI runs it: `node scripts/run-evals.js --min-rank1 95`
-- [ ] Command parity and artifact paths green if you touched any command directory: `node scripts/validate-commands.js` and `node scripts/validate-artifact-paths.js`
+- [ ] Artifact paths green if you touched the planning skill or the setup docs: `node scripts/validate-artifact-paths.js`
 - [ ] Unit tests green if you touched `scripts/`: `node --test scripts/*-test.js scripts/lib/*-test.js`
 - [ ] Hook tests green if you touched `hooks/` or `using-agent-skills`: `bash hooks/session-start-test.sh`, `bash hooks/sdd-cache-test.sh`, `bash hooks/simplify-ignore-test.sh`
 - [ ] New skill → eval case file present with the minimum trigger/behavioral counts
