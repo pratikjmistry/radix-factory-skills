@@ -14,32 +14,25 @@ Skills encode the workflows, quality gates, and best practices that senior engin
  │ Idea │ ───▶ │ Spec │ ───▶ │ Code │ ───▶ │ Test │ ───▶ │  QA  │ ───▶ │  Go  │
  │Refine│      │  PRD │      │ Impl │      │Debug │      │ Gate │      │ Live │
  └──────┘      └──────┘      └──────┘      └──────┘      └──────┘      └──────┘
-  /spec          /plan          /build        /test         /review       /ship
 ```
 
 ---
 
-## Commands
+## Fork baseline (radix-factory-skills)
 
-9 slash commands that map to the development lifecycle. Each one activates the right skills automatically.
+This repository is `radix-factory-skills`, a fork of [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills) taken at upstream commit `301b02b` (2026-11-01). It is packaged as a Claude Code plugin with skills and references only.
 
-| What you're doing | Command | Key principle |
-|-------------------|---------|---------------|
-| Define what to build | `/spec` | Spec before code |
-| Plan how to build it | `/plan` | Small, atomic tasks |
-| Build incrementally | `/build` | One slice at a time |
-| Prove it works | `/test` | Tests are proof |
-| Set the quality bar | `/constraints` | Decide it once, enforce it everywhere |
-| Review before merge | `/review` | Improve code health |
-| Audit web performance | `/webperf` | Measure before you optimize |
-| Simplify the code | `/code-simplify` | Clarity over cleverness |
-| Ship to production | `/ship` | Faster is safer |
+Removed from the upstream baseline:
 
-In Claude Code these install as plugin commands. Where a built-in command has the same name, as `/review` does, use the namespaced form: `/agent-skills:review`.
+- `agents/`: agent personas
+- `commands/` and `.claude/commands/`: slash commands
+- `.gemini/`: Gemini CLI configuration
+- `.opencode/`: OpenCode configuration
+- `skills/spec-driven-development/`: the spec-driven-development skill
 
-Want fewer manual steps once the spec exists? **`/build auto`** generates the plan and implements every task in a single approved pass — you approve the plan once, then it runs autonomously. It removes the human stepping *between* tasks, not the verification: every task is still test-driven and committed individually, and it pauses on failures or risky steps.
+Kept: `skills/` (the remaining skills), `references/`, `hooks/`, and `.claude-plugin/` (renamed to `radix-factory-skills`). The original work is by Addy Osmani and remains under the MIT [License](#license); attribution is retained.
 
-Skills also activate automatically based on what you're doing — designing an API triggers `api-and-interface-design`, building UI triggers `frontend-ui-engineering`, and so on.
+A few upstream skills, and some upstream install and setup text below, still refer to the removed commands, agents or skill.
 
 ---
 
@@ -109,7 +102,7 @@ Put workflow skills under `.cursor/skills/` (sync from `agent-skills/skills/`) a
 <details>
 <summary><b>Antigravity CLI</b></summary>
 
-Install as a native plugin for skills and subagents. In affected Antigravity CLI releases, legacy command TOMLs are reported as converted but their wrapper commands are not discoverable; invoke the underlying namespaced skills directly. See [docs/antigravity-setup.md](docs/antigravity-setup.md#lifecycle-workflows-and-command-compatibility).
+Install as a native plugin for skills. See [docs/antigravity-setup.md](docs/antigravity-setup.md).
 
 **Install from the repo:**
 
@@ -164,7 +157,7 @@ See [docs/opencode-setup.md](docs/opencode-setup.md).
 <details>
 <summary><b>GitHub Copilot</b></summary>
 
-Use agent definitions from `agents/` as Copilot personas and skill content in `.github/copilot-instructions.md`. The lifecycle slash commands (`/spec`, `/plan`, `/build`, `/test`, `/review`, `/ship`) are Claude Code commands and do not appear in Copilot; invoke the skills by name (`/spec-driven-development`, …) instead. See [docs/copilot-setup.md](docs/copilot-setup.md).
+Use skill content in `.github/copilot-instructions.md` and invoke the skills by name. See [docs/copilot-setup.md](docs/copilot-setup.md).
 
 Using the standalone `copilot` CLI? Install it as a plugin — see [docs/copilot-cli-setup.md](docs/copilot-cli-setup.md).
 
@@ -185,7 +178,7 @@ codex plugin marketplace add addyosmani/agent-skills
 codex plugin add agent-skills@agent-skills
 ```
 
-The first command registers the marketplace; the second installs the plugin. Codex reads the root `skills/` directory directly through `.codex-plugin/plugin.json`. Once installed, invoke skills in chat using `@` (e.g., `@spec-driven-development`). See [docs/codex-setup.md](docs/codex-setup.md) for local installation and troubleshooting.
+The first command registers the marketplace; the second installs the plugin. Codex reads the root `skills/` directory directly through `.codex-plugin/plugin.json`. Once installed, invoke skills in chat using `@` (e.g., `@test-driven-development`). See [docs/codex-setup.md](docs/codex-setup.md) for local installation and troubleshooting.
 
 </details>
 
@@ -197,10 +190,10 @@ Install natively with the built-in `cmd skills` command. Command Code clones the
 ```bash
 cmd skills add addyosmani/agent-skills            # pick skills to install (project)
 cmd skills add addyosmani/agent-skills --global   # install for all projects (~/.commandcode/skills/)
-cmd skills add addyosmani/agent-skills -s spec-driven-development  # install a specific skill
+cmd skills add addyosmani/agent-skills -s test-driven-development  # install a specific skill
 ```
 
-Installed skills show up in the TUI slash menu, e.g. `/spec-driven-development`. See [docs/commandcode-setup.md](docs/commandcode-setup.md).
+Installed skills show up in the TUI slash menu, e.g. `/test-driven-development`. See [docs/commandcode-setup.md](docs/commandcode-setup.md).
 
 </details>
 
@@ -221,9 +214,9 @@ Already installed? How you roll the pack out depends on your codebase. The **[Ad
 
 ---
 
-## All 25 Skills
+## All 24 Skills
 
-The commands above are entry points. The pack includes 25 skills total — 24 lifecycle skills plus the `using-agent-skills` meta-skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. You can also reference any skill directly.
+The pack includes 24 skills total — 23 lifecycle skills plus the `using-agent-skills` meta-skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. Skills activate automatically based on what you're doing — designing an API triggers `api-and-interface-design`, building UI triggers `frontend-ui-engineering`, and so on — and you can also reference any skill directly.
 
 ### Meta - Discover which skill applies
 
@@ -237,7 +230,6 @@ The commands above are entry points. The pack includes 25 skills total — 24 li
 |-------|-------------|----------|
 | [interview-me](skills/interview-me/SKILL.md) | One-question-at-a-time interview that extracts what the user actually wants instead of what they think they should want, until ~95% confidence | The ask is underspecified, or the user invokes "interview me" / "grill me" |
 | [idea-refine](skills/idea-refine/SKILL.md) | Structured divergent/convergent thinking to turn vague ideas into concrete proposals | You have a rough concept that needs exploration |
-| [spec-driven-development](skills/spec-driven-development/SKILL.md) | Write a PRD covering objectives, commands, structure, code style, testing, and boundaries before any code | Starting a new project, feature, or significant change |
 | [constraint-driven-development](skills/constraint-driven-development/SKILL.md) | Interviews you for a quality bar with sane default thresholds, writes CONSTRAINTS.md, places each check by cost, and catches agents silencing checks or skipping tests to get green | No standards are written down, or an agent is producing more than anyone reads |
 
 ### Plan - Break it down
@@ -284,21 +276,6 @@ The commands above are entry points. The pack includes 25 skills total — 24 li
 | [documentation-and-adrs](skills/documentation-and-adrs/SKILL.md) | Architecture Decision Records, API docs, inline documentation standards - document the *why* | Making architectural decisions, changing APIs, or shipping features |
 | [observability-and-instrumentation](skills/observability-and-instrumentation/SKILL.md) | Structured logging, RED metrics, OpenTelemetry tracing, symptom-based alerting - instrument as you build | Adding telemetry, or shipping anything that runs in production |
 | [shipping-and-launch](skills/shipping-and-launch/SKILL.md) | Pre-launch checklists, feature flag lifecycle, staged rollouts, rollback procedures, monitoring setup | Preparing to deploy to production |
-
----
-
-## Agent Personas
-
-Pre-configured specialist personas for targeted reviews:
-
-| Agent | Role | Perspective |
-|-------|------|-------------|
-| [code-reviewer](agents/code-reviewer.md) | Senior Staff Engineer | Five-axis code review with "would a staff engineer approve this?" standard |
-| [test-engineer](agents/test-engineer.md) | QA Specialist | Test strategy, coverage analysis, and the Prove-It pattern |
-| [security-auditor](agents/security-auditor.md) | Security Engineer | Vulnerability detection, threat modeling, OWASP assessment |
-| [web-performance-auditor](agents/web-performance-auditor.md) | Web Performance Engineer | Core Web Vitals audit with Quick/Deep modes and a metric-honesty rule; run it via `/webperf` |
-
-See [docs/agents.md](docs/agents.md) for the decision matrix, orchestration rules, and how personas compose with skills and slash commands.
 
 ---
 
@@ -355,13 +332,12 @@ The portable core stays in shared directories. Host-specific paths are native di
 
 | Layer / consumer | Repository paths | Purpose |
 |---|---|---|
-| Shared workflow core | `skills/` (25 skills) | Portable `SKILL.md` workflows used by every integration |
-| Shared review material | `agents/` (4 personas), `references/` (7 checklists) | Specialist reviewers and pack-level checklists carried by whole-repo installs |
-| Claude Code adapter | `.claude/commands/` (9 commands), `.claude-plugin/`, `hooks/` | Slash-command wrappers, marketplace metadata, and lifecycle hooks |
-| Gemini CLI adapter | `.gemini/commands/` (9 commands) | Gemini-native TOML command wrappers |
-| Antigravity CLI adapter | `commands/` (9 commands), `plugin.json` | Legacy TOML wrappers and the root plugin manifest; see the [known wrapper limitation](docs/antigravity-setup.md#lifecycle-workflows-and-command-compatibility) |
+| Shared workflow core | `skills/` (24 skills) | Portable `SKILL.md` workflows used by every integration |
+| Shared reference material | `references/` (7 checklists) | Pack-level checklists carried by whole-repo installs |
+| Claude Code adapter | `.claude-plugin/`, `hooks/` | Plugin and marketplace metadata, and lifecycle hooks |
+| Antigravity CLI adapter | `plugin.json` | Root plugin manifest |
 | Codex adapter | `.codex-plugin/`, `.agents/plugins/` | Codex plugin metadata and marketplace registration; Codex consumes `skills/` directly |
-| GitHub Copilot CLI adapter | `plugin.json` | Root plugin metadata; Copilot CLI discovers `skills/` by convention and does not register the lifecycle wrappers |
+| GitHub Copilot CLI adapter | `plugin.json` | Root plugin metadata; Copilot CLI discovers `skills/` by convention |
 | Contributor tooling | `scripts/` (13 scripts), `evals/` (25 case files), `.github/workflows/` | Validation, routing evals, and CI |
 | Documentation | `docs/` | Universal guidance and per-tool setup guides |
 
