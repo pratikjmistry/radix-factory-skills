@@ -41,16 +41,16 @@ A few upstream skills, and some upstream install and setup text below, still ref
 **Fastest path — any agent, one command.** The open [skills CLI](https://github.com/vercel-labs/skills) installs into 70+ agents (Claude Code, Cursor, Codex, Copilot, Cline, and more):
 
 ```bash
-npx skills add addyosmani/agent-skills            # install all 25 skills
-npx skills add addyosmani/agent-skills --list     # browse before installing
+npx skills add pratikjmistry/radix-factory-skills            # install all 24 skills
+npx skills add pratikjmistry/radix-factory-skills --list     # browse before installing
 ```
 
 Or grab individual skills:
 
 ```bash
-npx skills add addyosmani/agent-skills --skill code-review-and-quality   # five-axis review before merge
-npx skills add addyosmani/agent-skills --skill interview-me              # requirements interrogation, one question at a time
-npx skills add addyosmani/agent-skills --skill test-driven-development   # red-green-refactor, enforced
+npx skills add pratikjmistry/radix-factory-skills --skill code-review-and-quality   # five-axis review before merge
+npx skills add pratikjmistry/radix-factory-skills --skill interview-me              # requirements interrogation, one question at a time
+npx skills add pratikjmistry/radix-factory-skills --skill test-driven-development   # red-green-refactor, enforced
 ```
 
 > **Installing one skill?** A per-skill `npx` install copies only
@@ -68,14 +68,14 @@ Prefer a native integration? Pick your tool below.
 **Marketplace install:**
 
 ```
-/plugin marketplace add addyosmani/agent-skills
-/plugin install agent-skills@addy-agent-skills
+/plugin marketplace add pratikjmistry/radix-factory-skills
+/plugin install radix-factory-skills@radix-factory-skills
 ```
 
 > **SSH errors?** The marketplace clones repos via SSH. If you don't have SSH keys set up on GitHub, either [add your SSH key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) or use the full HTTPS URL to force HTTPS cloning during the marketplace-add step:
 > ```bash
-> /plugin marketplace add https://github.com/addyosmani/agent-skills.git
-> /plugin install agent-skills@addy-agent-skills
+> /plugin marketplace add https://github.com/pratikjmistry/radix-factory-skills.git
+> /plugin install radix-factory-skills@radix-factory-skills
 > ```
 >
 > If `/plugin install` still fails with `git@github.com: Permission denied (publickey)` on Windows or macOS, the recommended workaround is to configure Git once to rewrite GitHub SSH URLs to HTTPS for subprocess clones:
@@ -86,8 +86,8 @@ Prefer a native integration? Pick your tool below.
 **Local / development:**
 
 ```bash
-git clone https://github.com/addyosmani/agent-skills.git
-claude --plugin-dir /path/to/agent-skills
+git clone https://github.com/pratikjmistry/radix-factory-skills.git
+claude --plugin-dir /path/to/radix-factory-skills
 ```
 
 </details>
@@ -95,7 +95,7 @@ claude --plugin-dir /path/to/agent-skills
 <details>
 <summary><b>Cursor</b></summary>
 
-Put workflow skills under `.cursor/skills/` (sync from `agent-skills/skills/`) and short policies in `.cursor/rules/*.mdc` — do not paste full skills into rules. Both directories live in your project; this repo does not ship a `.cursor/` folder. See [docs/cursor-setup.md](docs/cursor-setup.md).
+Put workflow skills under `.cursor/skills/` (sync from `radix-factory-skills/skills/`) and short policies in `.cursor/rules/*.mdc` — do not paste full skills into rules. Both directories live in your project; this repo does not ship a `.cursor/` folder. See [docs/cursor-setup.md](docs/cursor-setup.md).
 
 </details>
 
@@ -107,14 +107,14 @@ Install as a native plugin for skills. See [docs/antigravity-setup.md](docs/anti
 **Install from the repo:**
 
 ```bash
-agy plugin install https://github.com/addyosmani/agent-skills.git
+agy plugin install https://github.com/pratikjmistry/radix-factory-skills.git
 ```
 
 **Install from a local clone:**
 
 ```bash
-git clone https://github.com/addyosmani/agent-skills.git
-agy plugin install ./agent-skills
+git clone https://github.com/pratikjmistry/radix-factory-skills.git
+agy plugin install ./radix-factory-skills
 ```
 
 </details>
@@ -127,13 +127,13 @@ Install as native skills for auto-discovery, or add to `GEMINI.md` for persisten
 **Install from the repo:**
 
 ```bash
-gemini skills install https://github.com/addyosmani/agent-skills.git --path skills
+gemini skills install https://github.com/pratikjmistry/radix-factory-skills.git --path skills
 ```
 
 **Install from a local clone:**
 
 ```bash
-gemini skills install ./agent-skills/skills/
+gemini skills install ./radix-factory-skills/skills/
 ```
 
 </details>
@@ -174,8 +174,8 @@ Using the standalone `copilot` CLI? Install it as a plugin — see [docs/copilot
 Install as a native Codex plugin (Codex CLI v0.122+):
 
 ```bash
-codex plugin marketplace add addyosmani/agent-skills
-codex plugin add agent-skills@agent-skills
+codex plugin marketplace add pratikjmistry/radix-factory-skills
+codex plugin add radix-factory-skills@radix-factory-skills
 ```
 
 The first command registers the marketplace; the second installs the plugin. Codex reads the root `skills/` directory directly through `.codex-plugin/plugin.json`. Once installed, invoke skills in chat using `@` (e.g., `@test-driven-development`). See [docs/codex-setup.md](docs/codex-setup.md) for local installation and troubleshooting.
@@ -188,9 +188,9 @@ The first command registers the marketplace; the second installs the plugin. Cod
 Install natively with the built-in `cmd skills` command. Command Code clones the repo, discovers every `SKILL.md`, and installs into `.commandcode/skills/`:
 
 ```bash
-cmd skills add addyosmani/agent-skills            # pick skills to install (project)
-cmd skills add addyosmani/agent-skills --global   # install for all projects (~/.commandcode/skills/)
-cmd skills add addyosmani/agent-skills -s test-driven-development  # install a specific skill
+cmd skills add pratikjmistry/radix-factory-skills            # pick skills to install (project)
+cmd skills add pratikjmistry/radix-factory-skills --global   # install for all projects (~/.commandcode/skills/)
+cmd skills add pratikjmistry/radix-factory-skills -s test-driven-development  # install a specific skill
 ```
 
 Installed skills show up in the TUI slash menu, e.g. `/test-driven-development`. See [docs/commandcode-setup.md](docs/commandcode-setup.md).
