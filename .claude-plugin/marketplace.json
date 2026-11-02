@@ -9,10 +9,7 @@
     {
       "name": "radix-factory-skills",
       "version": "0.6.15",
-      "source": {
-        "source": "github",
-        "repo": "pratikjmistry/radix-factory-skills"
-      },
+      "source": "./",
       "description": "Production-grade engineering skills covering every phase of software development: spec, plan, build, verify, review, and ship.",
       "homepage": "https://github.com/pratikjmistry/radix-factory-skills",
       "license": "MIT",
