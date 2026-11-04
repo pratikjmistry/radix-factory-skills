@@ -1,0 +1,100 @@
+{
+  "skill_name": "test-plan",
+  "trigger": {
+    "positive": [
+      {
+        "prompt": "The PRD is approved; write the test plan and the Gherkin feature files",
+        "top_k": 1
+      },
+      {
+        "prompt": "Derive verification criteria from the business acceptance criteria and show the coverage",
+        "top_k": 3
+      },
+      {
+        "prompt": "Which acceptance criteria in our PRD have no test scenario yet?",
+        "top_k": 3
+      },
+      {
+        "prompt": "Write Given/When/Then scenarios for the scheduling requirements, tagged with their requirement IDs",
+        "top_k": 3
+      }
+    ],
+    "negative": [
+      {
+        "prompt": "Check our PRD for vague acceptance criteria before the architect starts",
+        "owner": "write-prd"
+      },
+      {
+        "prompt": "Write a failing test for this bug before fixing it",
+        "owner": "test-driven-development"
+      },
+      {
+        "prompt": "Design the architecture and pick the stack from the approved PRD",
+        "owner": "solution-architecture"
+      },
+      {
+        "prompt": "Write unit tests for this function",
+        "owner": "test-driven-development"
+      }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "kind": "execution",
+      "prompt": "Write the test plan and Gherkin scenarios from docs/PRD.md. Nobody is available to answer questions right now.",
+      "expected_output": "docs/TEST-PLAN.md with Verification Criteria for every BAC, every NFR, every Non-Negotiable NFR and every CONSTRAINTS.md non-negotiable, a coverage matrix, and tests/features/*.feature files (one per capability) tagged with FR, BAC and VC IDs; email timing tested at the PRD's 'by 09:00' with the architecture's 10:00 raised as a question for the architect; no source file changed; Status no higher than Ready for review",
+      "files": [
+        "test-plan"
+      ],
+      "expectations": [
+        "docs/TEST-PLAN.md exists and has sections for the test strategy, the Verification Criteria, a coverage matrix, quality gates and open questions",
+        "Every BAC from BAC-1 to BAC-65 appears in the coverage matrix with at least one VC",
+        "Every VC links to at least one scenario by tag, or is marked Manual or Tool check (or non-functional) with a stated reason",
+        "tests/features/ contains several .feature files, one per capability (user flow, cross-cutting non-negotiable such as access control, or FR group); not a single file and not one file per BAC",
+        "Scenarios carry @FR-, @BAC- and @VC- tags whose IDs exist in the PRD or the test plan, and the BAC-13 scenario uses the PRD's example: held 2026-01-10 gives 2026-04-10 for Tier 1, 2026-07-09 for Tier 2 and 2027-01-10 for Tier 3",
+        "No step in any feature file contains URLs, UI selectors, HTTP verbs or endpoints, table or class names, or technology names",
+        "Each of the four Non-Negotiable NFRs (Larkspur staff only, confidential client information, no outside email, CRM is the source of account data) and each of CONSTRAINTS.md N-1 to N-8, including the N-8 mass-change guard, has at least one VC with an observable pass/fail condition",
+        "Each PRD section 9 NFR has a VC carrying the PRD's target (24-hour data freshness, emails by 09:00 in the recipient's time zone with IST fallback, 95% of page loads within 2 seconds at 300 users and 200 accounts, 99% availability in the stated business hours) or an ADR's tighter value for it (for example, the 6-hourly sync for the 24-hour freshness target), or is marked Manual or non-functional with a reason; only a VC that uses a value looser than the PRD's target fails",
+        "Email-timing VCs and scenarios use the PRD's 'by 09:00', not the architecture's 10:00 send time, AND TEST-PLAN.md's open questions contain a row raising the 10:00 versus 09:00 conflict, owned by the architect, citing the PRD's email-timing NFR; both parts are required",
+        "Integration VCs use the architecture's test doubles (fake CRM, fake directory, captured outbox, fixed clock), and no VC needs a live CRM, directory or mail relay to pass",
+        "No VC tests behaviour the PRD rules out or doesn't ask for, such as writing to the CRM, mobile layouts, or sending email to addresses outside Larkspur as a feature",
+        "docs/PRD.md, docs/ARCHITECTURE.md, every file in docs/adr/ and CONSTRAINTS.md are byte-for-byte unchanged",
+        "TEST-PLAN.md Status is exactly 'Ready for review' (not Draft, not Approved), and the agent reports the checklist results by item ID, T1 to T15"
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "execution",
+      "prompt": "Write the test plan from docs/PRD.md so development can start.",
+      "expected_output": "A Draft test plan: the PRD is In Review with blocking open questions and there is no architecture yet, so blocked BACs are marked with the specific open question, the vague BAC-64 is routed to the BA instead of given an invented threshold, levels and doubles are provisional, and unblocked BACs still get VCs and scenarios",
+      "files": [
+        "test-plan-in-review"
+      ],
+      "expectations": [
+        "The agent identifies the PRD's Status as In Review, and TEST-PLAN.md has Status Draft",
+        "Exactly these six BACs are marked Blocked, each with no executable scenario, each citing the specific blocking open question(s) that name it or its FR: BAC-3 (OQ 8, via FR-2), BAC-4 (OQ 8, via FR-2), BAC-19 (OQ 1 directly and OQ 8 via FR-11), BAC-55 (OQ 2), BAC-59 (OQ 2), BAC-60 (OQ 1). OQ 3 names no FR or BAC; it names the Non-Negotiable 'CRM is the source of account data', so the VC for that Non-Negotiable is Blocked citing OQ 3. No other BAC is marked Blocked by a PRD open question (BAC-64's untestable block is a separate reason). A generic 'blocked by open questions' without the OQ number fails.",
+        "BAC-64 ('quickly and clearly') gets no invented threshold or field list; it is marked untestable and a blocking open question routed to the PRD approver via the BA names BAC-64",
+        "Because there is no docs/ARCHITECTURE.md, test levels and doubles are marked provisional, and NFR and integration VCs are marked Pending architecture",
+        "Every routed question is its own row in TEST-PLAN.md's open questions, with an owner, a blocking flag and the IDs it blocks in its own Blocks column",
+        "docs/PRD.md is unchanged, and no docs/ARCHITECTURE.md or CONSTRAINTS.md is created",
+        "Unblocked BACs, for example BAC-13, still have VCs and tagged scenarios; the Draft is useful, not empty"
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "execution",
+      "prompt": "Write the test plan and feature files from docs/PRD.md.",
+      "expected_output": "A refusal: the PRD is in Draft, so no test plan or feature files are written and the human is routed back to the BA. (Fixture: reuses evals/fixtures/solution-architecture-draft-prd, the Draft-status PRD from the solution-architecture refusal eval.)",
+      "files": [
+        "solution-architecture-draft-prd"
+      ],
+      "expectations": [
+        "The agent reads the PRD's Status and identifies it as Draft",
+        "No docs/TEST-PLAN.md and no file under tests/features/ is created",
+        "The PRD file is unchanged; the agent does not change its status or content to get past the gate",
+        "The agent tells the human the PRD must reach In Review or Approved first and routes them to the BA / write-prd"
+      ]
+    }
+  ]
+}
