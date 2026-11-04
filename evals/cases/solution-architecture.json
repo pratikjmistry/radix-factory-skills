@@ -60,7 +60,11 @@
         "CONSTRAINTS.md does not restate product rules such as tier intervals, reminder timings or the day-14 escalation, and any check that cannot run yet is marked Planned rather than listed as enforced",
         "Technology choices are presented as proposals awaiting confirmation at design review, listed in open questions, not as decisions the human made",
         "Every NFR in PRD section 9 (data freshness, email timing, time display, scale, speed, availability, retention, audit, devices) is mapped to an architectural approach, and the observability section says how failed scheduled jobs and failed email sends are detected",
-        "The agent reports the architecture checklist results by item ID (A1 to A15) rather than claiming the architecture is done"
+        "The Corvid CRM integration states what happens to the tool's account, QBR and action-item records when an account is deleted or merged in the CRM, or raises it as an open question",
+        "Both absence-based inferences have a named guard against a partial, empty or failed read (for example, a complete-read check or a mass-change threshold with hold and alert), or a blocking open question: an account no longer returned as a Customer account by the CRM read (BAC-5), and a user missing or disabled in the company directory read (edge case 5, BAC-63)",
+        "Every platform limit, quota or SLA stated in ARCHITECTURE.md or an ADR cites a source (document and date checked) or is marked unverified",
+        "CLAUDE.md is byte-for-byte unchanged (it already contains the CONSTRAINTS.md pointer line), and no second pointer line is added to it or to a new AGENTS.md",
+        "The agent reports the architecture checklist results by item ID (A1 to A16) rather than claiming the architecture is done"
       ]
     },
     {

@@ -84,7 +84,7 @@ Copy [templates/architecture.md](templates/architecture.md) to `docs/ARCHITECTUR
 
 1. **Constraints & Non-Negotiables (section 2)** first. Everything after this must respect them.
 2. **Data Model (section 5).** Every Shared Contract entity appears. Mark what this system owns and what it mirrors read-only from an external source.
-3. **Integration Points (section 6).** For each external system: direction, mechanism and schedule, authentication, and what happens when it fails. The failure behaviour must match the PRD's edge cases.
+3. **Integration Points (section 6).** For each external system: direction, mechanism and schedule, authentication, and what happens when it fails. The failure behaviour must match the PRD's edge cases. For an inbound integration, say what happens to this system's records when the source deletes or merges a record. On every integration, any rule that infers removal, deletion, disablement or loss of status from a record's *absence* in a read must name its guard against a partial, empty or failed read. For example, apply it only after a complete, successful read, or hold and alert when a run would change more records than a set threshold. A read that returned nothing looks exactly like a source where everything was removed.
 4. **Technology Stack (section 3) and Components (section 4).** Each component names the FR and NFR IDs it serves. A component that serves nothing is scope creep.
 5. **Deployment Topology (section 7)**, covering dev, staging and production.
 6. **Observability (section 8)**, mapped to the availability NFR. Say how a scheduled job that fails or never runs is detected, and how a failed outbound message (such as an email) is detected and reported. These failures are silent by default.
@@ -103,6 +103,8 @@ Use the ADR template from `documentation-and-adrs`, stored as `docs/adr/NNNN-keb
 - each decision a reasonable engineer could make differently and regret later
 
 Each ADR's Context cites the PRD IDs it serves. Status is `Proposed`. Only a human sets `Accepted`, at design review.
+
+Every platform limit, quota, tier or SKU setting, or SLA that a decision relies on cites its source: the vendor document and the date you checked it. If you can't check it, write `unverified` next to it and add it to Open Questions. Use `source-driven-development` to look it up. A remembered limit reads exactly like a checked one, and platform limits change.
 
 ### Step 6: Write CONSTRAINTS.md
 
@@ -153,7 +155,7 @@ Non-negotiable rows whose check isn't wired yet say `Planned:` in their *Checked
 
 **Coding rule or product rule?** Ask: would a reviewer check this in a diff? "Reminders go out 7 days before the meeting" is product behaviour. It lives in the PRD and is proved by tests, so it stays out of `CONSTRAINTS.md`. "Scheduled jobs are idempotent and safe to re-run" is a coding rule and belongs here. Restating product rules in `CONSTRAINTS.md` creates a second source that drifts from the PRD.
 
-Finally, add one line to `AGENTS.md` or `CLAUDE.md`, if it isn't there already: `Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass.`
+Finally, make sure agents are pointed at the file. Read `AGENTS.md` and `CLAUDE.md` first. If either already contains the line `Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass.`, skip this step and leave both files untouched. Otherwise add that line to one of them. If you aren't permitted to write either file, don't work around it: report in the handoff that the line is missing.
 
 ### Step 7: Send PRD problems back, don't fix them
 
@@ -161,11 +163,13 @@ While designing you will find PRD gaps: an FR that is impossible as written, an 
 
 ### Step 8: Run the checklist and hand off
 
-Run every item in the checklist below against the written files, not against your memory. Fix what you can and turn the rest into open questions. Then:
+First, re-read each ADR adversarially. For every input the decision depends on, ask: *what breaks if this input is partial, empty, duplicated or late?* Each answer becomes one of three things: a fix in the ADR, a Risk (section 13) or an Open Question (section 15). Confident decisions hide their failure modes from the person who wrote them. When your environment lets you start a read-only reviewer with fresh context, hand this re-read to it instead (see `doubt-driven-development`).
+
+Then run every item in the checklist below against the written files, not against your memory. Fix what you can and turn the rest into open questions. Then:
 
 1. Set `ARCHITECTURE.md` Status, never higher than Step 1 allows.
 2. Fill the Approvals table with the design-review approvers' roles and names. If you don't know who approves, ask.
-3. Report: the PRD status you worked from, the checklist result as one line per item ID (A1 to A15), each marked pass or fail with what is missing (never a blanket "all pass"), the list of ADRs, any planned constraint rows, and the open questions that need a human.
+3. Report: the PRD status you worked from, the checklist result as one line per item ID (A1 to A16), each marked pass or fail with what is missing (never a blanket "all pass"), the list of ADRs, any planned constraint rows, and the open questions that need a human.
 4. **Stop.** Never set `Approved` and never set an ADR to `Accepted`. Design review is the human's gate.
 
 ## The architecture checklist
@@ -186,9 +190,10 @@ Report results by ID.
 **Decisions**
 - [ ] **A8** Every stack layer has a choice, a version constraint and a deciding ADR with the alternatives considered.
 - [ ] **A9** Every ADR has Status `Proposed` (or `Accepted`/`Superseded` set by a human), a Context citing PRD IDs, alternatives and consequences.
-- [ ] **A10** Every integration states direction, mechanism and schedule, authentication, and failure behaviour consistent with the PRD's edge cases. Every inbound integration states what happens to this system's records when the source deletes or merges a record, or raises that as an open question.
+- [ ] **A10** Every integration states direction, mechanism and schedule, authentication, and failure behaviour consistent with the PRD's edge cases. Every inbound integration states what happens to this system's records when the source deletes or merges a record, or raises that as an open question. On every integration, any rule that infers removal, deletion, disablement or loss of status from a record's absence names its guard against a partial, empty or failed read, or raises the missing guard as a blocking open question.
 - [ ] **A11** Deployment covers dev, staging and production. Observability maps to the availability NFR and says how failed scheduled jobs and failed outbound messages are detected.
 - [ ] **A12** The security baseline maps every access rule in the PRD to where it is enforced, and covers data classification, secrets and audit.
+- [ ] **A16** Every platform limit, quota, tier or SKU setting, or SLA stated in `ARCHITECTURE.md` or an ADR cites its source (document and date checked), or is marked `unverified` and listed in Open Questions.
 
 **Constraints**
 - [ ] **A13** `CONSTRAINTS.md` has the Precedence block, every non-negotiable names its source, and every check not yet wired is marked `Planned` rather than listed as enforced.
@@ -209,6 +214,8 @@ Report results by ID.
 | "I'll list the checks as enforced; tooling comes in the first sprint." | A rule with no command behind it is an aspiration. Mark it `Planned` and make wiring it the first task. |
 | "Putting the reminder rules in CONSTRAINTS.md means developers will see them." | Then there are two sources, and they drift. Product rules stay in the PRD and are proved by tests. |
 | "Observability can wait until we deploy." | A scheduled job that never runs produces no error. If nobody designed how it is detected, nobody will notice. |
+| "The sync always returns the full list, so a missing record means it was removed." | Until the day the source times out, pages wrongly or returns an empty set. Then every record looks removed at once. Guard the inference. |
+| "I know that platform limit." | You remember a limit; the vendor may have changed it. Cite the document or mark it `unverified`. |
 
 ## Red Flags
 
@@ -223,6 +230,8 @@ Report results by ID.
 - Business rules, notification schedules or other product behaviour restated in `CONSTRAINTS.md`
 - Components with no FR or NFR ID, or features the PRD never asked for
 - No answer to "how would we know if the nightly job didn't run?"
+- A sync that disables, deletes or de-lists records because they are missing from a read, with no guard against a partial or empty read
+- A platform limit or quota in an ADR with no source and no `unverified` mark
 
 ## Verification
 
@@ -233,7 +242,8 @@ Before handing off for design review, confirm:
 - [ ] Every ADR is in `docs/adr/NNNN-title.md` and linked from section 11
 - [ ] `CONSTRAINTS.md` exists, with Precedence, Non-negotiables and any Planned rows
 - [ ] `git diff docs/PRD.md` is empty
-- [ ] Every checklist item A1–A15 passes against the files, and the result is reported by ID
+- [ ] Each ADR was re-read for partial, empty, duplicated and late inputs
+- [ ] Every checklist item A1–A16 passes against the files, and the result is reported by ID
 - [ ] Status is no higher than the PRD allows, and no ADR is `Accepted` unless a human set it
 
 ## See Also
