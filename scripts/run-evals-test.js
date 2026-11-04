@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
-const { materializeWorkspace, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel } = require('./run-evals');
+const { materializeWorkspace, isolationBreach, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel } = require('./run-evals');
 
 const RUNNER = path.join(__dirname, 'run-evals.js');
 
@@ -1059,5 +1059,91 @@ test('loads quoted YAML skill identities using their decoded values', () => {
     const result = run(root);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /PASSED/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('stages every skill into the workspace, outside git, and points the executor at it', () => {
+  const root = makeSandbox();
+  try {
+    writeSkill(root, 'alpha-skill', 'Handles alpha widgets.');
+    writeSkill(root, 'beta-skill', 'Handles beta widgets.');
+    fs.mkdirSync(path.join(root, 'skills/alpha-skill/templates'));
+    fs.writeFileSync(path.join(root, 'skills/alpha-skill/templates/t.md'), 'template\n');
+    writeJson(path.join(root, 'evals/cases/alpha-skill.json'), completeCase('alpha-skill', 'change alpha widget'));
+    const seen = path.join(root, 'seen.json');
+    const stub = path.join(root, 'stub-claude.cjs');
+    fs.writeFileSync(stub, `
+      const cp = require('child_process'); const fs = require('node:fs'); const path = require('node:path');
+      const real = cp.execFileSync;
+      cp.execFileSync = (command, args, opts) => {
+        if (command !== 'claude') return real(command, args, opts);
+        if (!args.includes('--output-format')) return ${JSON.stringify(passingGrading)};
+        const at = (p) => fs.existsSync(path.join(opts.cwd, p));
+        fs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify({
+          skill: at('.agent-skills/alpha-skill/SKILL.md'),
+          template: at('.agent-skills/alpha-skill/templates/t.md'),
+          other: at('.agent-skills/beta-skill/SKILL.md'),
+          prompt: args[args.indexOf('--append-system-prompt') + 1],
+          status: real('git', ['status', '--porcelain'], { cwd: opts.cwd, encoding: 'utf8' }),
+        }));
+        return '{"type":"result","subtype":"success","is_error":false,"result":"done"}\\n';
+      };
+    `);
+    const result = spawnSync(process.execPath, ['--require', stub, path.join(root, 'scripts/run-evals.js'), '--behavioral', 'alpha-skill'], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    assert.equal(s.skill, true);
+    assert.equal(s.template, true);
+    assert.equal(s.other, true);
+    assert.match(s.prompt, /\.agent-skills\/alpha-skill\//);
+    assert.match(s.prompt, /never from an installed plugin/);
+    assert.equal(s.status, '');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('isolationBreach flags skill reads outside the workspace and allows staged ones', () => {
+  const ws = '/private/var/folders/x/T/agent-skills-eval-abc';
+  const use = (name, input) => traceOf({ type: 'assistant', message: { content: [{ type: 'tool_use', name, id: 'u', input }] } });
+  const home = os.homedir();
+  const breaches = {
+    'plugin cache read': use('Read', { file_path: `${home}/.claude/plugins/cache/p/1.0.0/skills/a/SKILL.md` }),
+    'home .claude find': use('Bash', { command: "find ~/.claude -name '*.md'" }),
+    'absolute home .claude ls': use('Bash', { command: `ls ${home}/.claude/skills` }),
+    'glob in plugin dir': use('Glob', { pattern: '**/SKILL.md', path: `${home}/.claude/plugins` }),
+    'grep for SKILL.md elsewhere': use('Grep', { pattern: 'name:', path: '/opt/skills/a/SKILL.md' }),
+    'bash cat SKILL.md elsewhere': use('Bash', { command: 'cat /opt/other-repo/skills/a/SKILL.md' }),
+    'bash escapes with ..': use('Bash', { command: 'cat ../../skills/a/SKILL.md' }),
+    "another eval's spill file": use('Read', { file_path: `${home}/.claude/projects/-private-var-folders-x-T-agent-skills-eval-zzz/0f0e/tool-results/x.txt` }),
+    'spill file read through Bash': use('Bash', { command: `cat ${home}/.claude/projects/-private-var-folders-x-T-agent-skills-eval-abc/0f0e/tool-results/x.txt` }),
+  };
+  for (const [name, trace] of Object.entries(breaches)) {
+    assert.match(isolationBreach(trace, ws) || '', /isolation breach/, name);
+  }
+  const allowed = {
+    'staged relative read': use('Read', { file_path: '.agent-skills/a/templates/t.md' }),
+    'staged absolute read (/var alias)': use('Read', { file_path: '/var/folders/x/T/agent-skills-eval-abc/.agent-skills/a/SKILL.md' }),
+    'bash on staged skill': use('Bash', { command: 'cat .agent-skills/b/SKILL.md' }),
+    'glob in workspace': use('Glob', { pattern: '**/SKILL.md' }),
+    'read outside workspace, not a skill': use('Read', { file_path: '/etc/hosts' }),
+    'edit is not a read': use('Write', { file_path: `${home}/.claude/plugins/x`, content: '' }),
+    "this eval's own spill file": use('Read', { file_path: `${home}/.claude/projects/-private-var-folders-x-T-agent-skills-eval-abc/0f0e/tool-results/x.txt` }),
+  };
+  for (const [name, trace] of Object.entries(allowed)) {
+    assert.equal(isolationBreach(trace, ws), null, name);
+  }
+});
+
+test('an execution that reads installed plugin skills is failed, not graded', () => {
+  const root = makeSandbox();
+  try {
+    const breach = { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', id: 'leak', input: { file_path: `${os.homedir()}/.claude/plugins/cache/p/1.0.0/skills/alpha-skill/SKILL.md` } }] } };
+    const trace = traceOf(breach, returned('leak'), terminal);
+    const result = runBehavioralWithGrading(root, passingGrading, { trace });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /isolation breach/);
+    const base = path.join(root, 'evals/results/alpha-skill.eval-1');
+    assert.equal(fs.existsSync(`${base}.grading.json`), false);
+    assert.match(fs.readFileSync(`${base}.execution.error.txt`, 'utf8'), /isolation breach/);
+    assert.equal(fs.readFileSync(path.join(root, 'claude-calls.txt'), 'utf8'), 'executor\n');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

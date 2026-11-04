@@ -40,6 +40,10 @@ const SKILLS_DIR = path.join(ROOT, 'skills');
 const CASES_DIR = path.join(ROOT, 'evals', 'cases');
 const FIXTURES_DIR = path.join(ROOT, 'evals', 'fixtures');
 const RESULTS_DIR = path.join(ROOT, 'evals', 'results');
+// Every skill is staged into the eval workspace under this directory, so the
+// skill under test can reach its own templates/ and references/, and any skill
+// it names resolves to this repo's current version, not an installed plugin.
+const SKILL_STAGE = '.agent-skills';
 
 const EXECUTOR_TIMEOUT_MS = 15 * 60 * 1000;
 const GRADER_TIMEOUT_MS = 5 * 60 * 1000;
@@ -491,6 +495,72 @@ function initializeWorkspace(ev, workspace) {
   return workspace;
 }
 
+function stageSkills(workspace, skillsDir = SKILLS_DIR) {
+  fs.cpSync(skillsDir, path.join(workspace, SKILL_STAGE), { recursive: true });
+  // Keep the staged copy out of git status/diff in execution workspaces.
+  const exclude = path.join(workspace, '.git', 'info', 'exclude');
+  if (fs.existsSync(path.dirname(exclude))) fs.appendFileSync(exclude, `\n/${SKILL_STAGE}/\n`);
+}
+
+function skillPreamble(skillName) {
+  return [
+    `Follow this skill exactly. Its folder is staged at ${SKILL_STAGE}/${skillName}/ in the working directory: resolve the skill's relative links (templates/, references/, scripts/) against that folder.`,
+    `Any other skill it names is at ${SKILL_STAGE}/<skill-name>/SKILL.md. Read it from there, never from an installed plugin, so every skill is the version under test.`,
+  ].join('\n');
+}
+
+// Enforces the staging above: a run that reads skills from outside its
+// workspace tested some other version, so it must not be graded. Checks the
+// file-reading tools' inputs for the plugin cache, a home .claude directory,
+// or a SKILL.md path outside the workspace.
+const ISOLATION_TOOLS = new Set(['Read', 'Glob', 'Grep', 'Bash']);
+
+function isolationBreach(trace, workspace) {
+  // macOS reports temp dirs as both /var/... and /private/var/...
+  const canon = (p) => p.replace(/^\/private(?=\/)/, '');
+  const ws = canon(path.resolve(workspace));
+  const home = os.homedir();
+  const inside = (p) => {
+    const abs = canon(path.resolve(ws, p.replace(/^~(?=\/|$)/, home)));
+    return abs === ws || abs.startsWith(`${ws}/`);
+  };
+  const homeClaude = /(^|[\s'"=(])(~|\$HOME|\$\{HOME\})\/\.claude(\/|\b)/;
+  // Claude Code spills oversized tool output to its own session store and the
+  // agent reads it back; that file is this run's output, not an installed skill.
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const spillFile = new RegExp(`^${escapeRe(canon(home))}/\\.claude/projects/[^/]*${escapeRe(path.basename(ws))}/[^/]+/tool-results/[^/]+$`);
+  for (const line of trace.split('\n')) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const content = event?.type === 'assistant' && Array.isArray(event.message?.content) ? event.message.content : [];
+    for (const block of content) {
+      if (block?.type !== 'tool_use' || !ISOLATION_TOOLS.has(block.name)) continue;
+      const input = block.input || {};
+      const values = [input.file_path, input.path, input.pattern, input.command].filter((v) => typeof v === 'string');
+      for (const value of values) {
+        if (block.name === 'Read' && spillFile.test(canon(value))) continue;
+        if (value.includes('.claude/plugins') || homeClaude.test(value) || canon(value).includes(`${canon(home)}/.claude`)) {
+          return `isolation breach: ${block.name} touched an installed-skills location (${value.slice(0, 200)})`;
+        }
+      }
+      // A SKILL.md path the tool names directly, or a search rooted outside the workspace for one.
+      const target = input.file_path || input.path;
+      const mentionsSkill = values.some((v) => v.includes('SKILL.md'));
+      if (target && mentionsSkill && !inside(target)) {
+        return `isolation breach: ${block.name} read skills outside the workspace (${target})`;
+      }
+      if (block.name === 'Bash' && typeof input.command === 'string') {
+        for (const token of input.command.split(/[\s'"|;&()<>]+/)) {
+          if (token.includes('SKILL.md') && /^(\/|~|\.\.)/.test(token) && !inside(token)) {
+            return `isolation breach: Bash read skills outside the workspace (${token})`;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function parseGrading(raw, expectations, onInvalid = () => {}) {
   // Grader output may arrive fenced; extract the JSON object and validate shape.
   const m = raw.match(/\{[\s\S]*\}/);
@@ -640,6 +710,7 @@ function runBehavioral(skillName, dryRun, evalId = null) {
     // headless denials would force the exact narrate-instead-of-perform
     // failure mode that trace grading exists to catch.
     try {
+    stageSkills(workspace);
     let trace;
     let executorError;
     try {
@@ -648,14 +719,16 @@ function runBehavioral(skillName, dryRun, evalId = null) {
         ['-p', '--verbose', '--output-format', 'stream-json',
           '--permission-mode', 'acceptEdits',
           '--allowedTools', EXECUTOR_TOOLS,
-          '--append-system-prompt', `Follow this skill exactly:\n\n${fs.readFileSync(skillFile, 'utf8')}`],
+          '--append-system-prompt', `${skillPreamble(skillName)}\n\n${fs.readFileSync(skillFile, 'utf8')}`],
         { input: ev.prompt, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, cwd: workspace, timeout: EXECUTOR_TIMEOUT_MS },
       );
     } catch (error) {
       trace = String(error.stdout || '');
       executorError = error;
     }
-    const failure = executorError ? `${executorError.code || 'process failed'}: ${executorError.message}` : executionFailure(trace);
+    const failure = executorError
+      ? `${executorError.code || 'process failed'}: ${executorError.message}`
+      : executionFailure(trace) || isolationBreach(trace, workspace);
     if (failure) {
       fs.writeFileSync(`${base}.execution.raw.txt`, trace);
       fs.writeFileSync(`${base}.execution.error.txt`, `${failure}\n${executorError?.stderr || ''}`);
@@ -747,4 +820,4 @@ function main(args = process.argv.slice(2)) {
 
 if (require.main === module) main();
 
-module.exports = { materializeWorkspace, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel };
+module.exports = { materializeWorkspace, stageSkills, isolationBreach, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel };

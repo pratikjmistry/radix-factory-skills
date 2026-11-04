@@ -41,7 +41,7 @@ A few upstream skills, and some upstream install and setup text below, still ref
 **Fastest path — any agent, one command.** The open [skills CLI](https://github.com/vercel-labs/skills) installs into 70+ agents (Claude Code, Cursor, Codex, Copilot, Cline, and more):
 
 ```bash
-npx skills add pratikjmistry/radix-factory-skills            # install all 24 skills
+npx skills add pratikjmistry/radix-factory-skills            # install all 26 skills
 npx skills add pratikjmistry/radix-factory-skills --list     # browse before installing
 ```
 
@@ -216,7 +216,7 @@ Already installed? How you roll the pack out depends on your codebase. The **[Ad
 
 ## All 24 Skills
 
-The pack includes 24 skills total — 23 lifecycle skills plus the `using-agent-skills` meta-skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. Skills activate automatically based on what you're doing — designing an API triggers `api-and-interface-design`, building UI triggers `frontend-ui-engineering`, and so on — and you can also reference any skill directly.
+The pack includes 26 skills total — 25 lifecycle skills plus the `using-agent-skills` meta-skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. Skills activate automatically based on what you're doing — designing an API triggers `api-and-interface-design`, building UI triggers `frontend-ui-engineering`, and so on — and you can also reference any skill directly.
 
 ### Meta - Discover which skill applies
 
@@ -237,6 +237,7 @@ The pack includes 24 skills total — 23 lifecycle skills plus the `using-agent-
 
 | Skill | What It Does | Use When |
 |-------|-------------|----------|
+| [solution-architecture](skills/solution-architecture/SKILL.md) | Turns a PRD into `docs/ARCHITECTURE.md` (stack included), Proposed ADRs and a `CONSTRAINTS.md` with non-negotiables and a precedence rule, tracing every Shared Contract item and refusing to go past a draft until the PRD is approved | A PRD is approved or in review and the stack, data model, integrations and deployment need deciding |
 | [planning-and-task-breakdown](skills/planning-and-task-breakdown/SKILL.md) | Decompose specs into small, verifiable tasks with acceptance criteria and dependency ordering | You have a spec and need implementable units |
 
 ### Build - Write the code
@@ -333,7 +334,7 @@ The portable core stays in shared directories. Host-specific paths are native di
 
 | Layer / consumer | Repository paths | Purpose |
 |---|---|---|
-| Shared workflow core | `skills/` (24 skills) | Portable `SKILL.md` workflows used by every integration |
+| Shared workflow core | `skills/` (26 skills) | Portable `SKILL.md` workflows used by every integration |
 | Shared reference material | `references/` (7 checklists) | Pack-level checklists carried by whole-repo installs |
 | Claude Code adapter | `.claude-plugin/`, `hooks/` | Plugin and marketplace metadata, and lifecycle hooks |
 | Antigravity CLI adapter | `plugin.json` | Root plugin manifest |

@@ -27,6 +27,10 @@ last quarter). Front-desk staff spend about 3 hours a day on booking calls.
 - Must comply with the local health-data privacy law (client's legal team will
   confirm which articles apply).
 - Client wants to see this live before the summer intake.
+- Confirmation emails must go out through the clinic's existing email provider
+  account. Their IT contractor has to grant access before any email can be sent.
+  How the booking system connects to the provider is for the technical team to
+  decide later.
 
 ## Not wanted (v1)
 - No payments.

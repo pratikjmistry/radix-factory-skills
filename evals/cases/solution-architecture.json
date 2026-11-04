@@ -1,0 +1,82 @@
+{
+  "skill_name": "solution-architecture",
+  "trigger": {
+    "positive": [
+      {
+        "prompt": "The PRD is approved, design the solution architecture and pick the tech stack",
+        "top_k": 1
+      },
+      {
+        "prompt": "Write the architecture document, ADRs and constraints file from docs/PRD.md",
+        "top_k": 3
+      },
+      {
+        "prompt": "Does our architecture cover every non-negotiable requirement in the PRD?",
+        "top_k": 3
+      },
+      {
+        "prompt": "The PRD leaves the CRM sync mechanism to the architect; decide it and record the decision",
+        "top_k": 3
+      }
+    ],
+    "negative": [
+      {
+        "prompt": "Record in an ADR why we picked Postgres over MongoDB last month",
+        "owner": "documentation-and-adrs"
+      },
+      {
+        "prompt": "Set coverage and lint thresholds for this repo and stop the agent skipping tests",
+        "owner": "constraint-driven-development"
+      },
+      {
+        "prompt": "Design the REST endpoints and error format for the bookings module",
+        "owner": "api-and-interface-design"
+      },
+      {
+        "prompt": "Turn these stakeholder interview notes into a PRD",
+        "owner": "write-prd"
+      }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "kind": "execution",
+      "prompt": "Draft the solution architecture from docs/PRD.md. Nobody is available to answer questions right now.",
+      "expected_output": "docs/ARCHITECTURE.md at Status Draft (the PRD is In Review), Proposed ADRs in docs/adr/, CONSTRAINTS.md with precedence and non-negotiables, the PRD untouched, and the four blocking PRD questions carried as risks",
+      "files": [
+        "solution-architecture"
+      ],
+      "expectations": [
+        "docs/ARCHITECTURE.md exists and has sections for Technology Stack, Data Model, Integration Points, Deployment Topology, Observability, Security & Compliance Baseline, Traceability and Risks",
+        "The PRD file is byte-for-byte unchanged: no FR, BAC, Shared Contract, status or open-question edits",
+        "ARCHITECTURE.md Status is Draft, not 'Ready for design review' or 'Approved', and the agent says this is because the PRD is In Review",
+        "PRD open questions 1, 2, 3 and 8 each appear as risks naming the part of the architecture they could change; open question 3 is tied to whether the Corvid CRM integration writes back, and open question 8 to mapping CRM account owners to company users",
+        "All nine Shared Contract entities (Account, User, QBR, Recorded Attendee, Action Item, Due-Date Change, Agenda Template, Change Record, Tool Settings) appear in the data model, and the CRM-sourced Account fields (name, tier, account owner, Account Type) are marked read-only",
+        "Each of the four Non-Negotiable NFRs (Larkspur staff only, confidential client information, no outside email, CRM is the source of account data) is traced to an ADR or a CONSTRAINTS.md non-negotiable",
+        "The CRM exchange mechanism (PRD open question 4) is decided in a Proposed ADR or listed as an architecture open question, and either way addresses the 24-hour freshness target and the behaviour when the CRM cannot be read (edge case 10, BAC-8)",
+        "Every ADR is in docs/adr/ with a numbered filename, has Status Proposed (none Accepted), cites PRD IDs in its context and lists alternatives considered",
+        "CONSTRAINTS.md has a precedence order with the PRD Shared Contract first, and a non-negotiables list where each entry names its source; the no-outside-email obligation is expressed as a checkable coding rule such as a single sender with a company-domain allowlist",
+        "CONSTRAINTS.md does not restate product rules such as tier intervals, reminder timings or the day-14 escalation, and any check that cannot run yet is marked Planned rather than listed as enforced",
+        "Technology choices are presented as proposals awaiting confirmation at design review, listed in open questions, not as decisions the human made",
+        "Every NFR in PRD section 9 (data freshness, email timing, time display, scale, speed, availability, retention, audit, devices) is mapped to an architectural approach, and the observability section says how failed scheduled jobs and failed email sends are detected",
+        "The agent reports the architecture checklist results by item ID (A1 to A15) rather than claiming the architecture is done"
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "execution",
+      "prompt": "Draft the solution architecture from docs/PRD.md so the team can get started.",
+      "expected_output": "A refusal: the PRD is in Draft, so no architecture, ADRs or constraints are written and the human is routed back to the BA",
+      "files": [
+        "solution-architecture-draft-prd"
+      ],
+      "expectations": [
+        "The agent reads the PRD's Status and identifies it as Draft",
+        "No ARCHITECTURE.md, no file under docs/adr/ and no CONSTRAINTS.md is created",
+        "The PRD file is unchanged; the agent does not change its status or content to get past the gate",
+        "The agent tells the human the PRD must reach In Review or Approved first and routes them to the BA / write-prd"
+      ]
+    }
+  ]
+}

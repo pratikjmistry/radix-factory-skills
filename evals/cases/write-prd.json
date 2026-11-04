@@ -54,7 +54,9 @@
         "The Approvals table lists the client stakeholder and the delivery lead from the notes",
         "The health-data privacy law appears as a Non-Negotiable NFR in the Shared Contract, and an open question owned by the client's legal team asks which articles apply",
         "Payments, video consultations and SMS are listed under Out of Scope and none of them appears as an FR",
-        "The agent reports checklist results by item ID rather than claiming the PRD is done"
+        "Because the notes give a deadline (the summer intake) and nobody can be asked, the FRs are not all silently marked Must: either Scope records who confirmed an all-Must list, or a non-blocking open question owned by the client stakeholder asks which FRs could ship after the deadline",
+        "Access to the clinic's email provider appears as a Dependency, and the question of how the system connects to it is an Open Question; the two cite each other, and if the dependency is blocking while the question is not, the question says why it does not block approval (e.g. resolved in architecture)",
+        "The agent reports checklist results by item ID (C1 to C16) rather than claiming the PRD is done"
       ]
     }
   ]

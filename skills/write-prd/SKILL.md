@@ -57,12 +57,13 @@ Copy [templates/prd.md](templates/prd.md) to `docs/PRD.md` and fill it in this o
 
 1. **Problem Statement, Objectives, Scope, Personas.** Every objective has a success signal someone could observe. Out of Scope lists things a reasonable reader might otherwise assume are in scope.
 2. **User Flows**, one per persona goal.
-3. **Functional Requirements**: one behaviour per row, no "and", no technology names.
+3. **Functional Requirements**: one behaviour per row, no "and", no technology names. If there is a deadline (a target date, a launch, an event), don't mark everything confirmed for v1 as Must by default. Ask "which of these could ship after <deadline> if time runs short?" and set those to Should or Could. If the human says every FR is a Must, record that in Scope with who confirmed it and when. If nobody is available to ask, add a non-blocking open question asking for the split, owned by the approver.
 4. **Business Acceptance Criteria**: at least one per FR, each linked by ID (see *Writing a testable BAC*).
 5. **Shared Contract**: list every entity named in a flow or FR. Only obligations go under Non-Negotiable NFRs.
-6. **NFRs, Edge Cases & Failure Scenarios, Dependencies.** Each edge case says what the product does, not just what could go wrong.
+6. **NFRs, Edge Cases & Failure Scenarios, Dependencies.** Each edge case says what the product does, not just what could go wrong. A dependency's *Blocking?* means it blocks delivery. When a dependency has an unknown recorded as an open question, the two cite each other ("open question 4", "Dependency 1").
 7. **Boundaries** (section 13, see below).
-8. **Open Questions**: every unknown, with an owner, marked as blocking or not. A question is blocking only if its answer could change an FR, a BAC or the Shared Contract, including adding or removing an FR. A blocking question names the item it could change: an existing ID ("Blocks: BAC-4, Shared Contract → Entities") or the proposed FR ("Blocks: new FR — staff cancels on a patient's behalf"). Otherwise record it as non-blocking with an owner. The owner is whoever can answer the question; name any go-between in brackets, e.g. "Client legal team (via the client stakeholder)".
+8. **Open Questions**: every unknown, with an owner, marked as blocking or not. A question is blocking only if its answer could change an FR, a BAC or the Shared Contract, including adding or removing an FR. A blocking question names the item it could change: an existing ID ("Blocks: BAC-4, Shared Contract → Entities") or the proposed FR ("Blocks: new FR — staff cancels on a patient's behalf"). Otherwise record it as non-blocking with an owner. The owner is whoever can answer the question; name any go-between in brackets, e.g. "Client legal team (via the client stakeholder)". When a question is linked to a blocking dependency but is itself non-blocking, because it is answered after approval (for example, by the architect), say so in the question: "Non-blocking for this PRD: resolved in architecture; blocks delivery via Dependency 1."
+   A technical question the product leaves to the architect (how two systems connect, how often data syncs) is still recorded as its own open question, non-blocking, owned by the person who decides it "with the architect". A note in another column doesn't count: the architect looks for routed questions in Open Questions.
 
 When you can't fill a field from what you know, don't invent an answer. Ask the human (use the `interview-me` skill for anything that needs more than one question), or record it as an open question. A plausible answer that nobody gave you is worse than a visible gap. It reads as settled, and nobody re-examines it.
 
@@ -147,6 +148,10 @@ The PRD isn't done until every item is true of the file as written. Report resul
 - [ ] **C13** No open question is marked blocking, and every open question has an owner.
 - [ ] **C14** The Approvals table names at least one approver, Status is `Ready for approval`, and no approval date has been filled in by the author.
 
+**Consistency**
+- [ ] **C15** If Scope names a deadline, the FR priorities show a Must/Should split confirmed by the human, or Scope records that the human confirmed every FR as Must, or an open question asks for the split.
+- [ ] **C16** Wherever a Dependency and an Open Question cite each other, their *Blocking?* values agree, or the open question states why it doesn't block approval and who resolves it.
+
 ## Common Rationalizations
 
 | Rationalization | Reality |
@@ -157,6 +162,7 @@ The PRD isn't done until every item is true of the file as written. Report resul
 | "I'll fill the gap with a sensible default and note it later." | An invented answer reads exactly like a real one. Record it as an open question or ask. |
 | "The checklist passed in my head." | Run it against the file. The file is what downstream readers get. |
 | "Everyone already agreed in the meeting, so I'll mark it Approved." | Approval is recorded by the approver, not by the author. Set `Ready for approval` and stop. |
+| "They confirmed every feature for v1, so they're all Must." | Confirmed for v1 isn't the same as can't slip. With a deadline, the Must/Should split is what the team cuts from when time runs short. Ask for it. |
 | "Renumbering makes the IDs tidier after edits." | Every downstream reference breaks silently. Gaps in numbering are cheap. |
 | "Naming the database here saves the architect time." | Technology choices belong to architecture, with their trade-offs recorded. Put the need (for example "data survives a server restart") in the PRD instead. |
 
@@ -172,13 +178,15 @@ The PRD isn't done until every item is true of the file as written. Report resul
 - Boundaries copied word for word from the examples with nothing product-specific
 - Verification Criteria or test scenarios written into the PRD
 - Existing IDs renumbered during an update
+- A deadline in Scope and every FR marked Must, with no record that the human chose that
+- A blocking dependency citing a non-blocking open question that doesn't say why it doesn't block
 
 ## Verification
 
 Before handing the PRD to the approver, confirm:
 
 - [ ] `docs/PRD.md` exists and follows the section structure of [templates/prd.md](templates/prd.md)
-- [ ] Every checklist item C1–C14 passes against the file, and the result is reported by ID
+- [ ] Every checklist item C1–C16 passes against the file, and the result is reported by ID
 - [ ] FR and BAC counts are reported, and every FR has at least one BAC
 - [ ] A search of the BACs for the vague words listed above finds none
 - [ ] Status is `Ready for approval` (or `In Review` with the blocking question named), and no approval date is filled in
