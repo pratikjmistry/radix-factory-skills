@@ -35,6 +35,10 @@
       {
         "prompt": "Turn these stakeholder interview notes into a PRD",
         "owner": "write-prd"
+      },
+      {
+        "prompt": "Derive Gherkin scenarios from the approved PRD",
+        "owner": "test-plan"
       }
     ]
   },

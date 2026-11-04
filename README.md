@@ -238,6 +238,7 @@ The pack includes 26 skills total — 25 lifecycle skills plus the `using-agent-
 | Skill | What It Does | Use When |
 |-------|-------------|----------|
 | [solution-architecture](skills/solution-architecture/SKILL.md) | Turns a PRD into `docs/ARCHITECTURE.md` (stack included), Proposed ADRs and a `CONSTRAINTS.md` with non-negotiables and a precedence rule, tracing every Shared Contract item and refusing to go past a draft until the PRD is approved | A PRD is approved or in review and the stack, data model, integrations and deployment need deciding |
+| [test-plan](skills/test-plan/SKILL.md) | Derives Verification Criteria from the PRD's acceptance criteria and writes `docs/TEST-PLAN.md` with a coverage matrix plus Gherkin scenarios in `tests/features/` tagged with FR, BAC and VC IDs, holding at a draft while the PRD or a BAC is unsettled | A PRD is approved or in review and the team needs to define what proves each requirement |
 | [planning-and-task-breakdown](skills/planning-and-task-breakdown/SKILL.md) | Decompose specs into small, verifiable tasks with acceptance criteria and dependency ordering | You have a spec and need implementable units |
 
 ### Build - Write the code
