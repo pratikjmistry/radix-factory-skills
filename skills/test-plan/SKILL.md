@@ -47,6 +47,7 @@ PRD terms (FR, BAC, VC, Shared Contract, Non-Negotiable NFR, NFR) are used exact
 | **VC-n** | A Verification Criterion. IDs are global and sequential, never renumbered or reused. A dropped VC is marked `Withdrawn` with a reason. |
 | **Proves** | The BAC, NFR, Non-Negotiable NFR or `N-x` a VC checks. Every VC proves at least one. |
 | **Level** | `unit`, `integration`, `e2e` or `non-functional` |
+| **Integration VC** | A VC whose Level is `integration` because it crosses an external system or dependency the PRD names (source-of-record sync, directory, email delivery, etc.). |
 | **Method** | How a VC is checked. `Scenario`: one or more Gherkin scenarios. `Tool check`: a lint rule, architecture test, load test or similar named in `CONSTRAINTS.md` or the architecture. `Manual`: a named person checks it, with a reason why it can't be automated. |
 | **Capability** | The unit of one feature file: a PRD user flow, a cross-cutting Non-Negotiable NFR (such as access control), or a group of FRs that no flow uses |
 | **State** | Where a VC or a BAC stands, used in both the VC table and the coverage matrix. One of: `Covered` (a scenario proves it), `Manual`, `Non-functional`, `Blocked (…)` with the reason in brackets (`PRD OQ n` or `untestable`), `Pending architecture` or `Withdrawn`. |
@@ -62,7 +63,7 @@ Read the **Status** of `docs/PRD.md` and of `docs/ARCHITECTURE.md` before anythi
 |---|---|---|
 | PRD `Draft`, missing, or no status | **Refuse.** Write no test plan and no feature files. Tell the human the PRD must reach review first, and route them to the BA (`write-prd`). | — |
 | PRD `In Review` or `Ready for approval` | Draft only. A BAC is `Blocked (PRD OQ n)` when a blocking open question names it, or names the FR it links to. Cite the specific question. A Blocked BAC gets a VC row but no executable scenario. A Shared Contract item named by a blocking question blocks its VC the same way. | `Draft` |
-| `ARCHITECTURE.md` missing or below `Ready for design review` (PRD `In Review` or later) | Write the functional VCs and scenarios. Mark levels and doubles `provisional`. List NFR and integration VCs as `Pending architecture`. Complete them in a second pass after design review. | `Draft` |
+| `ARCHITECTURE.md` missing or below `Ready for design review` (PRD `In Review` or later) | Write the functional VCs and scenarios. Mark levels and doubles `provisional`. List NFR VCs as `Pending architecture`. An integration VC may have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal. Complete the pending VCs in a second pass after design review. | `Draft` |
 | A BAC is untestable or ambiguous (PRD `In Review` or later) | That BAC is `Blocked (untestable)`, with a blocking routed question to the PRD's approver (via the BA) that names it. Don't invent the missing number. Every other BAC proceeds. | `Draft` |
 | PRD `Approved`, architecture at `Ready for design review` or later, nothing blocked | Full run | `Ready for review` |
 
@@ -103,7 +104,7 @@ A VC states a condition that passes or fails. "Search works well" is not a VC. "
 
 For each VC, pick the lowest level that can prove it. Pick unit when the rule is pure logic. Pick integration when it crosses a component or an external system. Pick e2e only for a whole user flow or an access rule that must hold on every route.
 
-For each integration, use the double the architecture names: a fake source system, a captured mail outbox or a fixed clock. No VC may need a live external system to pass. When the architecture isn't ready, mark the level and doubles `provisional`.
+For each integration, use the double the architecture names: a fake source system, a captured mail outbox or a fixed clock. No VC may need a live external system to pass. When the architecture is missing or below `Ready for design review`, mark the level and doubles `provisional`. An integration VC may still have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal.
 
 The architecture chooses *how*, never *what*. If it describes behaviour the PRD and `CONSTRAINTS.md` don't require, don't write a VC for it. If it seems to need one, ask the architect.
 
