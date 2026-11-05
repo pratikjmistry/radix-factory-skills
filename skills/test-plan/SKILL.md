@@ -50,7 +50,7 @@ PRD terms (FR, BAC, VC, Shared Contract, Non-Negotiable NFR, NFR) are used exact
 | **Integration VC** | A VC whose Level is `integration` because it crosses an external system or dependency the PRD names (source-of-record sync, directory, email delivery, etc.). |
 | **Method** | How a VC is checked. `Scenario`: one or more Gherkin scenarios. `Tool check`: a lint rule, architecture test, load test or similar named in `CONSTRAINTS.md` or the architecture. `Manual`: a named person checks it, with a reason why it can't be automated. |
 | **Capability** | The unit of one feature file: a PRD user flow, a cross-cutting Non-Negotiable NFR (such as access control), or a group of FRs that no flow uses |
-| **State** | Where a VC or a BAC stands, used in both the VC table and the coverage matrix. One of: `Covered` (a scenario proves it), `Manual`, `Non-functional`, `Blocked (…)` with the reason in brackets (`PRD OQ n` or `untestable`), `Pending architecture` or `Withdrawn`. |
+| **State** | Where a VC or a BAC stands, used in both the VC table and the coverage matrix. One of: `Covered` (a scenario proves it), `Manual`, `Non-functional`, `Blocked (…)` with the reason in brackets (`PRD OQ n` or `untestable`), `Pending architecture` or `Withdrawn`. A BAC is `untestable` only when it has no observable outcome, or a pass/fail condition it needs is missing or subjective ("quickly", "clearly", "user-friendly"). A BAC whose conditions and outcome are stated is testable. |
 | **Routed question** | A question this skill can't answer and must send to its owner. The rule is the same as in `write-prd`'s Step 2.8. The IDs it blocks go in the Open Questions table's own **Blocks** column, not in the question text. |
 
 ## The Process
@@ -64,7 +64,7 @@ Read the **Status** of `docs/PRD.md` and of `docs/ARCHITECTURE.md` before anythi
 | PRD `Draft`, missing, or no status | **Refuse.** Write no test plan and no feature files. Tell the human the PRD must reach review first, and route them to the BA (`write-prd`). | — |
 | PRD `In Review` or `Ready for approval` | Draft only. A BAC is `Blocked (PRD OQ n)` when a blocking open question names it, or names the FR it links to. Cite the specific question. A Blocked BAC gets a VC row but no executable scenario. A Shared Contract item named by a blocking question blocks its VC the same way. | `Draft` |
 | `ARCHITECTURE.md` missing or below `Ready for design review` (PRD `In Review` or later) | Write the functional VCs and scenarios. Mark levels and doubles `provisional`. List NFR VCs as `Pending architecture`. An integration VC may have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal. Complete the pending VCs in a second pass after design review. | `Draft` |
-| A BAC is untestable or ambiguous (PRD `In Review` or later) | That BAC is `Blocked (untestable)`, with a blocking routed question to the PRD's approver (via the BA) that names it. Don't invent the missing number. Every other BAC proceeds. | `Draft` |
+| A BAC is untestable (PRD `In Review` or later): it has no observable outcome, or a pass/fail condition it needs is missing or subjective ("quickly", "clearly", "user-friendly") | That BAC is `Blocked (untestable)`, with a blocking routed question to the PRD's approver (via the BA) that names it. Don't invent the missing number. Every other BAC proceeds. A BAC whose conditions and outcome are stated is testable: write its VCs from its literal text. An edge case the BAC doesn't mention, or a possible interaction with another BAC or FR, is not a reason to block it. Raise it as a routed question, blocking only if the answer would contradict the BAC's stated text. | `Draft` |
 | PRD `Approved`, architecture at `Ready for design review` or later, nothing blocked | Full run | `Ready for review` |
 
 When several rows apply, apply every treatment, and the lowest ceiling wins.
@@ -150,7 +150,7 @@ Run every item below against the written files, not against your memory. Fix wha
 3. Report:
    - the PRD and architecture statuses you worked from
    - the counts of BACs, VCs (by method) and scenarios
-   - the checklist result as one line per ID (T1 to T15), each pass or fail with what is missing
+   - the checklist result as one line per ID, T1 to T15, each pass or fail with what is missing. Never a blanket "all pass".
    - every Blocked item, and the routed questions
 4. **Stop.** Never set `Approved`. The test plan's review is the human's gate.
 
@@ -186,6 +186,7 @@ Report results by ID.
 | Rationalization | Reality |
 |---|---|
 | "The BAC says 'quickly', so I'll use 2 seconds." | An invented threshold reads like an agreed one, and the build will be judged against it. Block the BAC and ask the PRD's approver. |
+| "This BAC doesn't cover every edge, so it's untestable." | Untestable means no observable outcome or a missing or subjective pass/fail condition. Test what the BAC states, and route the edge case as a question. |
 | "The architecture says the import also archives stale records, so I'll test that." | If the PRD and `CONSTRAINTS.md` don't require it, it's a design detail, not a requirement. Ask the architect whether it should be. |
 | "The ADR allows 48 hours and the PRD says 24. The ADR is newer, so it wins." | The PRD is higher in precedence. Test 24 hours and raise the conflict. |
 | "One feature file per BAC is the most traceable." | Tags carry the traceability. Files per capability keep a flow readable as a whole. |
@@ -216,7 +217,7 @@ Before handing off for review, confirm:
 - [ ] Every feature file is in `tests/features/` and is listed in the plan's feature index
 - [ ] `git diff docs/PRD.md docs/ARCHITECTURE.md docs/adr CONSTRAINTS.md` is empty
 - [ ] Searching the feature files for `@BAC-` finds every BAC the matrix marks `Covered`
-- [ ] Every checklist item T1–T15 passes against the files, and the result is reported by ID
+- [ ] Every checklist item T1–T15 passes against the files, and the result is reported as one line per ID with pass or fail and what is missing, not a blanket "all pass"
 - [ ] Status is no higher than Step 1 allows, and nothing is marked `Approved` by the agent
 
 ## See Also
