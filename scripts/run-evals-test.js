@@ -68,27 +68,46 @@ function run(root, args = []) {
   });
 }
 
+// options: args, ids, trace, error (executor throws), graderError (grader
+// throws), evalFields ({ id: extra eval fields }), env (extra environment).
+// Every claude call is logged to claude-calls.txt (role) and
+// claude-options.jsonl (role, --model value, timeout, stdio).
 function runBehavioralWithGrading(root, raw, options = {}) {
   const { args = [] } = options;
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
-  evalCase.evals = (options.ids || [1]).map((id) => ({ ...behavioralEval([]), id, kind: 'dialogue' }));
+  evalCase.evals = (options.ids || [1]).map((id) => ({
+    ...behavioralEval([]), id, kind: 'dialogue', ...(options.evalFields?.[id] || {}),
+  }));
   writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
   const stub = path.join(root, 'stub-claude.cjs');
   fs.writeFileSync(stub, `
     const assert = require('node:assert/strict');
-    require('child_process').execFileSync = (command, args) => {
+    require('child_process').execFileSync = (command, args, opts = {}) => {
       assert.equal(command, 'claude');
       const executor = args.includes('--output-format');
-      require('node:fs').appendFileSync(${JSON.stringify(path.join(root, 'claude-calls.txt'))}, executor ? 'executor\\n' : 'grader\\n');
+      const fs = require('node:fs');
+      fs.appendFileSync(${JSON.stringify(path.join(root, 'claude-calls.txt'))}, executor ? 'executor\\n' : 'grader\\n');
+      const m = args.indexOf('--model');
+      fs.appendFileSync(${JSON.stringify(path.join(root, 'claude-options.jsonl'))}, JSON.stringify({
+        role: executor ? 'executor' : 'grader', model: m === -1 ? null : args[m + 1], timeout: opts.timeout, stdio: opts.stdio,
+      }) + '\\n');
       if (executor && ${JSON.stringify(Boolean(options.error))}) throw Object.assign(new Error('executor failed'), ${JSON.stringify(options.error || {})});
+      if (!executor && ${JSON.stringify(Boolean(options.graderError))}) throw Object.assign(new Error('grader failed'), ${JSON.stringify(options.graderError || {})});
       return executor ? ${JSON.stringify(options.trace ?? '{"type":"result","subtype":"success","is_error":false,"result":"done"}\n')} : ${JSON.stringify(raw)};
     };
   `);
+  const env = { ...process.env, ...(options.env || {}) };
+  for (const key of ['EVAL_MODEL', 'EVAL_GRADER_MODEL']) if (!(options.env && key in options.env)) delete env[key];
   return spawnSync(process.execPath, [
     '--require', stub, path.join(root, 'scripts', 'run-evals.js'),
     '--behavioral', 'alpha-skill', ...args,
-  ], { cwd: root, encoding: 'utf8' });
+  ], { cwd: root, encoding: 'utf8', env });
+}
+
+function claudeOptions(root) {
+  const file = path.join(root, 'claude-options.jsonl');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
 }
 
 const passingGrading = JSON.stringify({
@@ -182,6 +201,224 @@ for (const code of ['ETIMEDOUT', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']) {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 }
+
+// ---------- model, timeouts, error capture, soak selection ----------
+
+for (const [name, opts, expected] of [
+  ['passes no --model by default', {}, { executor: null, grader: null, meta: 'default' }],
+  ['passes --model to executor and grader', { args: ['--model', 'sonnet'] }, { executor: 'sonnet', grader: 'sonnet', meta: 'sonnet' }],
+  ['reads EVAL_MODEL', { env: { EVAL_MODEL: 'haiku' } }, { executor: 'haiku', grader: 'haiku', meta: 'haiku' }],
+  ['lets the flag win over EVAL_MODEL', { args: ['--model', 'opus'], env: { EVAL_MODEL: 'haiku' } }, { executor: 'opus', grader: 'opus', meta: 'opus' }],
+  ['takes a separate grader model', { args: ['--grader-model', 'opus'], env: { EVAL_MODEL: 'sonnet' } }, { executor: 'sonnet', grader: 'opus', meta: 'opus' }],
+  ['reads EVAL_GRADER_MODEL', { env: { EVAL_MODEL: 'sonnet', EVAL_GRADER_MODEL: 'opus' } }, { executor: 'sonnet', grader: 'opus', meta: 'opus' }],
+]) {
+  test(`model option: ${name}`, () => {
+    const root = makeSandbox();
+    try {
+      const result = runBehavioralWithGrading(root, passingGrading, opts);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [executor, grader] = claudeOptions(root);
+      assert.equal(executor.model, expected.executor);
+      assert.equal(grader.model, expected.grader);
+      const grading = JSON.parse(fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.grading.json'), 'utf8'));
+      assert.equal(grading.run.grader_model, expected.meta);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+for (const [name, opts, executorMs, graderMs] of [
+  ['defaults to 15 and 5 minutes', {}, 15 * 60000, 5 * 60000],
+  ['uses the eval\'s timeout fields', { evalFields: { 1: { timeout_minutes: 2, grader_timeout_minutes: 3 } } }, 2 * 60000, 3 * 60000],
+  ['lets --timeout override the eval\'s executor timeout', { args: ['--timeout', '7'], evalFields: { 1: { timeout_minutes: 2 } } }, 7 * 60000, 5 * 60000],
+]) {
+  test(`timeout: ${name}`, () => {
+    const root = makeSandbox();
+    try {
+      const result = runBehavioralWithGrading(root, passingGrading, opts);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [executor, grader] = claudeOptions(root);
+      assert.equal(executor.timeout, executorMs);
+      assert.equal(grader.timeout, graderMs);
+      for (const call of [executor, grader]) assert.deepEqual(call.stdio, ['pipe', 'pipe', 'pipe']);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('the execution error file states the cause and stderr, not the argv dump', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      error: { code: 'ETIMEDOUT', signal: 'SIGTERM', stdout: traceOf(call), stderr: 'stderr line one\nstderr line two\n', message: 'Command failed: claude -p --append-system-prompt WHOLE-SKILL-TEXT' },
+      evalFields: { 1: { timeout_minutes: 2 } },
+    });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /execution incomplete: ETIMEDOUT: executor timed out after [\d.]+ min \(limit 2\.0 min\)/);
+    const report = fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.execution.error.txt'), 'utf8');
+    assert.match(report, /^cause: ETIMEDOUT: executor timed out/);
+    assert.match(report, /signal=SIGTERM/);
+    assert.match(report, /--- stderr ---\nstderr line one\nstderr line two\n/);
+    assert.doesNotMatch(report, /WHOLE-SKILL-TEXT|append-system-prompt/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an incomplete trace names the trace check as its cause', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, { trace: traceOf(call) });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /execution incomplete: missing successful terminal result/);
+    const report = fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.execution.error.txt'), 'utf8');
+    assert.match(report, /^cause: missing successful terminal result/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a usage limit names the API error and stops the remaining evals', () => {
+  const root = makeSandbox();
+  try {
+    const limited = traceOf({
+      type: 'result', subtype: 'success', is_error: true, num_turns: 1, total_cost_usd: 0,
+      api_error_status: 429, api_error: 'usage_limit_reached', result: "You've hit your 5-hour limit",
+    });
+    const result = runBehavioralWithGrading(root, passingGrading, { error: { status: 1, stdout: limited, stderr: '' }, ids: [1, 2, 3] });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /execution incomplete: 429 usage_limit_reached: You've hit your 5-hour limit/);
+    assert.match(result.stdout, /usage limit reached; stopping before 2 remaining eval\(s\)/);
+    assert.equal(fs.readFileSync(path.join(root, 'claude-calls.txt'), 'utf8'), 'executor\n');
+    const report = fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.execution.error.txt'), 'utf8');
+    assert.match(report, /^cause: 429 usage_limit_reached/);
+    assert.match(report, /turns=1 cost_usd=0/);
+    assert.equal(fs.existsSync(path.join(root, 'evals/results/alpha-skill.eval-2.execution.error.txt')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a grader failure is recorded and later evals still run', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      graderError: { code: 'ETIMEDOUT', stdout: 'partial', stderr: 'grader diagnostic\n' }, ids: [1, 2],
+    });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(fs.readFileSync(path.join(root, 'claude-calls.txt'), 'utf8'), 'executor\ngrader\nexecutor\ngrader\n');
+    for (const id of [1, 2]) {
+      const base = path.join(root, `evals/results/alpha-skill.eval-${id}`);
+      assert.match(result.stdout, new RegExp(`eval ${id}: grader failed: ETIMEDOUT: grader timed out`));
+      const report = fs.readFileSync(`${base}.grading.error.txt`, 'utf8');
+      assert.match(report, /role: grader/);
+      assert.match(report, /grader diagnostic/);
+      assert.match(report, /--- stdout ---\npartial/);
+      assert.equal(fs.existsSync(`${base}.grading.json`), false);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('clearGradingSlot also clears a stale grader error', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-skills-slot-'));
+  try {
+    const base = path.join(dir, 'skill.eval-1');
+    fs.writeFileSync(`${base}.grading.error.txt`, 'old');
+    clearGradingSlot(base);
+    assert.equal(fs.existsSync(`${base}.grading.error.txt`), false);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+for (const [name, args, graded] of [
+  ['skips soak evals by default', [], [1]],
+  ['includes soak evals with --soak', ['--soak'], [1, 2]],
+  ['runs a soak eval selected by --eval', ['--eval', '2'], [2]],
+]) {
+  test(`soak selection: ${name}`, () => {
+    const root = makeSandbox();
+    try {
+      const result = runBehavioralWithGrading(root, passingGrading, { args, ids: [1, 2], evalFields: { 2: { soak: true } } });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      for (const id of [1, 2]) {
+        assert.equal(fs.existsSync(path.join(root, `evals/results/alpha-skill.eval-${id}.grading.json`)), graded.includes(id));
+      }
+      if (!args.length) assert.match(result.stdout, /skipping 1 soak eval\(s\); pass --soak/);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('a skill with only soak evals asks for --soak', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, { evalFields: { 1: { soak: true } } });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /has only soak evals; pass --soak/);
+    assert.equal(fs.existsSync(path.join(root, 'claude-calls.txt')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('dry-run shows the model, timeouts and soak marker', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      args: ['--dry-run', '--soak', '--model', 'sonnet'], ids: [1, 2],
+      evalFields: { 2: { soak: true, timeout_minutes: 45 } },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /eval 1: .*executor model sonnet, timeout 15\.0 min; grader model sonnet, timeout 5\.0 min.*--model sonnet/);
+    assert.match(result.stdout, /eval 2 \[soak\]: .*timeout 45\.0 min/);
+    assert.equal(fs.existsSync(path.join(root, 'claude-calls.txt')), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [args, message] of [
+  [['--model'], /--model needs a value/],
+  [['--model', '--soak'], /--model needs a value/],
+  [['--timeout', '0'], /--timeout must be a number of minutes/],
+  [['--timeout', '61'], /--timeout must be a number of minutes/],
+  [['--timeout', 'soon'], /--timeout must be a number of minutes/],
+]) {
+  test(`rejects behavioral option ${JSON.stringify(args)}`, () => {
+    const root = makeSandbox();
+    try {
+      const result = runBehavioralWithGrading(root, passingGrading, { args });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, message);
+      assert.equal(fs.existsSync(path.join(root, 'claude-calls.txt')), false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('behavioral options are rejected on deterministic runs', () => {
+  const root = makeSandbox();
+  try {
+    const result = run(root, ['--model', 'sonnet', '--soak']);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /--model, --soak apply only to behavioral evals/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [field, value] of [
+  ['timeout_minutes', 0], ['timeout_minutes', 61], ['timeout_minutes', '5'],
+  ['grader_timeout_minutes', -1], ['soak', 'yes'],
+]) {
+  test(`Tier 2 rejects ${field}=${JSON.stringify(value)}`, () => {
+    const root = makeSandbox();
+    writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+    const evalCase = completeCase('alpha-skill', 'change alpha widget');
+    evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue', [field]: value }];
+    writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+    try {
+      const result = run(root);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout, new RegExp(`eval id=1 ${field} must`));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('Tier 2 accepts valid timeout and soak fields', () => {
+  const root = makeSandbox();
+  writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+  const evalCase = completeCase('alpha-skill', 'change alpha widget');
+  evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue', timeout_minutes: 12, grader_timeout_minutes: 2.5, soak: true }];
+  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  try {
+    const result = run(root);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 for (const args of [['--eval'], ['--eval', 'not-a-number'], ['--eval', '1.5'], ['--eval', '9007199254740993']]) {
   test(`rejects an invalid behavioral selector ${JSON.stringify(args)}`, () => {

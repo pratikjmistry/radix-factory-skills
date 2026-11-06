@@ -17,11 +17,18 @@
  *     - Rank-1 ratchet: --min-rank1 <pct> fails when routing quality drops
  *       below the checked-in CI baseline.
  *   Tier 3 (opt-in, costs tokens, never in CI):
- *     node scripts/run-evals.js --behavioral <skill> [--dry-run]
+ *     node scripts/run-evals.js --behavioral <skill> [--eval <id>] [--dry-run]
+ *       [--soak] [--model <m>] [--grader-model <m>] [--timeout <minutes>]
  *     Runs each behavioral eval through headless `claude` in a throwaway
  *     workspace. Execution evals materialize files[] fixtures and grade the
  *     full stream-json trace; dialogue evals need no fixture and grade the
  *     conversational turns. --dry-run prints the plan without executing.
+ *     Evals marked "soak": true are skipped unless --soak is given or the
+ *     eval is selected with --eval. --model (or EVAL_MODEL) sets the executor
+ *     model; --grader-model (or EVAL_GRADER_MODEL) sets the grader model and
+ *     defaults to the executor's. With neither, claude's default is used.
+ *     --timeout overrides the executor timeout; per-eval "timeout_minutes"
+ *     and "grader_timeout_minutes" set it in the case file.
  *
  * Zero dependencies. Exit code 1 on any error-level failure.
  */
@@ -45,8 +52,11 @@ const RESULTS_DIR = path.join(ROOT, 'evals', 'results');
 // it names resolves to this repo's current version, not an installed plugin.
 const SKILL_STAGE = '.agent-skills';
 
-const EXECUTOR_TIMEOUT_MS = 15 * 60 * 1000;
-const GRADER_TIMEOUT_MS = 5 * 60 * 1000;
+// Defaults, in minutes; an eval may set timeout_minutes and
+// grader_timeout_minutes, and --timeout overrides the executor's.
+const EXECUTOR_TIMEOUT_MIN = 15;
+const GRADER_TIMEOUT_MIN = 5;
+const MAX_TIMEOUT_MIN = 60;
 
 // Tools the Tier-3 executor may use inside its throwaway workspace. Edits are
 // auto-accepted (acceptEdits) and these tools are pre-approved so the agent
@@ -228,6 +238,10 @@ function resolveFixturePath(root, rel) {
   return resolvedPath;
 }
 
+function validTimeout(minutes) {
+  return typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0 && minutes <= MAX_TIMEOUT_MIN;
+}
+
 function duplicateEvalIds(evals) {
   const seen = new Set();
   const duplicates = new Set();
@@ -332,6 +346,16 @@ function runDeterministic(minRank1) {
             errors++;
           }
         }
+      }
+      for (const field of ['timeout_minutes', 'grader_timeout_minutes']) {
+        if (ev[field] !== undefined && !validTimeout(ev[field])) {
+          console.log(`  ✗  ${c.file}: eval id=${ev.id} ${field} must be a number greater than 0 and at most ${MAX_TIMEOUT_MIN}`);
+          errors++;
+        }
+      }
+      if (ev.soak !== undefined && typeof ev.soak !== 'boolean') {
+        console.log(`  ✗  ${c.file}: eval id=${ev.id} soak must be true or false`);
+        errors++;
       }
       if (fixtureRequired && ev.trust_level === 'provisional') {
         console.log(`  ✗  ${c.file}: eval id=${ev.id} is still provisional; add real fixtures before trusting it`);
@@ -626,8 +650,62 @@ function extractExecutorModel(trace) {
   return null;
 }
 
+// The last stream-json result event, which carries the run's real outcome:
+// API errors (a 429 usage limit, for example), turns and cost.
+function terminalResult(trace) {
+  let terminal = null;
+  for (const line of String(trace || '').split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line);
+      if (event?.type === 'result') terminal = event;
+    } catch { continue; }
+  }
+  return terminal;
+}
+
+function isUsageLimit(terminal) {
+  return Boolean(terminal) && (terminal.api_error_status === 429 || terminal.api_error === 'usage_limit_reached');
+}
+
+const minutes = (ms) => `${(ms / 60000).toFixed(1)} min`;
+
+// A short, readable account of why a claude call failed. execFileSync's
+// error.message embeds the full argv, including the whole SKILL.md, so it is
+// never used: the cause comes from the terminal result event, the error code
+// and stderr, in that order.
+function describeFailure({ role, error, trace, reason, elapsedMs, timeoutMs, model }) {
+  const terminal = terminalResult(trace);
+  let headline;
+  if (terminal && (terminal.api_error || terminal.api_error_status)) {
+    const status = terminal.api_error_status ? `${terminal.api_error_status} ` : '';
+    headline = `${status}${terminal.api_error || 'api error'}: ${terminal.result || 'no message'}`;
+  } else if (error?.code === 'ETIMEDOUT') {
+    headline = `ETIMEDOUT: ${role} timed out after ${minutes(elapsedMs)} (limit ${minutes(timeoutMs)})`;
+  } else if (error) {
+    const firstStderr = String(error.stderr || '').split('\n').find((l) => l.trim());
+    const what = error.code || (error.status !== undefined && error.status !== null ? `exit ${error.status}` : error.signal) || 'process failed';
+    headline = firstStderr ? `${what}: ${firstStderr.trim()}` : `${what}: ${role} process failed`;
+  } else {
+    headline = reason;
+  }
+  const lines = [
+    `cause: ${headline}`,
+    `role: ${role}`,
+    `model: ${model || 'default'}`,
+    `elapsed: ${minutes(elapsedMs)} (timeout ${minutes(timeoutMs)})`,
+  ];
+  if (error) lines.push(`process: code=${error.code ?? '-'} status=${error.status ?? '-'} signal=${error.signal ?? '-'}`);
+  if (reason && reason !== headline) lines.push(`trace check: ${reason}`);
+  if (terminal) {
+    lines.push(`terminal result: subtype=${terminal.subtype ?? '-'} is_error=${terminal.is_error ?? '-'} turns=${terminal.num_turns ?? '-'} cost_usd=${terminal.total_cost_usd ?? '-'}`);
+  }
+  const stderr = String(error?.stderr || '');
+  return { headline, report: `${lines.join('\n')}\n--- stderr ---\n${stderr}${stderr.endsWith('\n') || !stderr ? '' : '\n'}` };
+}
+
 function clearGradingSlot(base) {
-  for (const suffix of ['grading.json', 'grading.raw.txt', 'execution.raw.txt', 'execution.error.txt']) {
+  for (const suffix of ['grading.json', 'grading.raw.txt', 'grading.error.txt', 'execution.raw.txt', 'execution.error.txt']) {
     fs.rmSync(`${base}.${suffix}`, { force: true });
   }
 }
@@ -647,7 +725,8 @@ function persistGradingOutcome(base, grading, raw, runMeta) {
 // resolve to files outside the project tree for both reads and writes.
 const VALID_SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-function runBehavioral(skillName, dryRun, evalId = null) {
+function runBehavioral(skillName, dryRun, evalId = null, options = {}) {
+  const { model = null, graderModel = model, timeoutMinutes = null, soak = false } = options;
   if (!skillName || !VALID_SKILL_NAME.test(skillName)) {
     console.error(`Invalid skill name: "${skillName}" — must be kebab-case (e.g. "my-skill")`);
     process.exit(1);
@@ -668,11 +747,19 @@ function runBehavioral(skillName, dryRun, evalId = null) {
     console.error(`"${skillName}" has duplicate behavioral eval id=${duplicateIds.join(', ')}; each grading slot needs a unique id`);
     process.exit(1);
   }
-  const selected = evalId === null ? d.evals : d.evals.filter((ev) => ev.id === evalId);
+  // Soak evals are long, optional and never gate a release: they run only
+  // with --soak, or when selected by id.
+  const selected = evalId === null
+    ? d.evals.filter((ev) => soak || ev.soak !== true)
+    : d.evals.filter((ev) => ev.id === evalId);
   if (!selected.length) {
-    console.error(`"${skillName}" has no behavioral eval id=${evalId}`);
+    console.error(evalId === null
+      ? `"${skillName}" has only soak evals; pass --soak or --eval <id> to run them`
+      : `"${skillName}" has no behavioral eval id=${evalId}`);
     process.exit(1);
   }
+  const skipped = d.evals.length - selected.length;
+  if (evalId === null && skipped) console.log(`skipping ${skipped} soak eval(s); pass --soak to include them`);
   if (!dryRun) fs.mkdirSync(RESULTS_DIR, { recursive: true });
   let failures = 0;
 
@@ -690,11 +777,16 @@ function runBehavioral(skillName, dryRun, evalId = null) {
       failures++;
       continue;
     }
+    const executorTimeoutMs = (timeoutMinutes ?? ev.timeout_minutes ?? EXECUTOR_TIMEOUT_MIN) * 60 * 1000;
+    const graderTimeoutMs = (ev.grader_timeout_minutes ?? GRADER_TIMEOUT_MIN) * 60 * 1000;
+    const modelArgs = model ? ['--model', model] : [];
+    const graderModelArgs = graderModel ? ['--model', graderModel] : [];
     if (dryRun) {
       const artifact = kind === 'dialogue'
         ? 'dialogue transcript; no fixture required'
         : `execution trace in workspace + ${fixtures} fixture(s)`;
-      console.log(`[dry-run] eval ${ev.id}: ${artifact}; claude -p --verbose --output-format stream-json --permission-mode acceptEdits --allowedTools ${EXECUTOR_TOOLS} --append-system-prompt <${skillName}/SKILL.md> < prompt-on-stdin`);
+      const soakNote = ev.soak === true ? ' [soak]' : '';
+      console.log(`[dry-run] eval ${ev.id}${soakNote}: ${artifact}; executor model ${model || 'default'}, timeout ${minutes(executorTimeoutMs)}; grader model ${graderModel || 'default'}, timeout ${minutes(graderTimeoutMs)}; claude -p --verbose --output-format stream-json --permission-mode acceptEdits --allowedTools ${EXECUTOR_TOOLS}${model ? ` --model ${model}` : ''} --append-system-prompt <${skillName}/SKILL.md> < prompt-on-stdin`);
       continue;
     }
     const base = path.join(RESULTS_DIR, `${skillName}.eval-${ev.id}`);
@@ -713,27 +805,38 @@ function runBehavioral(skillName, dryRun, evalId = null) {
     stageSkills(workspace);
     let trace;
     let executorError;
+    const executorStart = Date.now();
     try {
       trace = execFileSync(
         'claude',
         ['-p', '--verbose', '--output-format', 'stream-json',
           '--permission-mode', 'acceptEdits',
           '--allowedTools', EXECUTOR_TOOLS,
+          ...modelArgs,
           '--append-system-prompt', `${skillPreamble(skillName)}\n\n${fs.readFileSync(skillFile, 'utf8')}`],
-        { input: ev.prompt, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, cwd: workspace, timeout: EXECUTOR_TIMEOUT_MS },
+        { input: ev.prompt, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, cwd: workspace, timeout: executorTimeoutMs, stdio: ['pipe', 'pipe', 'pipe'] },
       );
     } catch (error) {
       trace = String(error.stdout || '');
       executorError = error;
     }
-    const failure = executorError
-      ? `${executorError.code || 'process failed'}: ${executorError.message}`
-      : executionFailure(trace) || isolationBreach(trace, workspace);
-    if (failure) {
+    const reason = executorError ? null : executionFailure(trace) || isolationBreach(trace, workspace);
+    if (executorError || reason) {
+      const { headline, report } = describeFailure({
+        role: 'executor', error: executorError, trace, reason,
+        elapsedMs: Date.now() - executorStart, timeoutMs: executorTimeoutMs, model,
+      });
       fs.writeFileSync(`${base}.execution.raw.txt`, trace);
-      fs.writeFileSync(`${base}.execution.error.txt`, `${failure}\n${executorError?.stderr || ''}`);
-      console.log(`  ✗  eval ${ev.id}: execution incomplete: ${failure}; raw execution retained`);
+      fs.writeFileSync(`${base}.execution.error.txt`, report);
+      console.log(`  ✗  eval ${ev.id}: execution incomplete: ${headline}; raw execution retained`);
       failures++;
+      // A usage limit fails every later eval the same way; stop instead of
+      // spending the rest of the run on it.
+      if (isUsageLimit(terminalResult(trace))) {
+        const remaining = selected.length - selected.indexOf(ev) - 1;
+        console.log(`  ✗  usage limit reached; stopping${remaining ? ` before ${remaining} remaining eval(s)` : ''}. Rerun after the limit resets.`);
+        break;
+      }
       continue;
     }
     const gradingInstructions = kind === 'dialogue'
@@ -755,12 +858,26 @@ function runBehavioral(skillName, dryRun, evalId = null) {
     ].join('\n\n');
     // The trace can be megabytes; pass the grader prompt via stdin, never
     // argv, or it would blow past the OS argument-size limit (E2BIG).
-    const raw = execFileSync('claude', ['-p'], { input: graderPrompt, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: GRADER_TIMEOUT_MS });
+    let raw;
+    const graderStart = Date.now();
+    try {
+      raw = execFileSync('claude', ['-p', ...graderModelArgs], { input: graderPrompt, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: graderTimeoutMs, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) {
+      // A grader failure costs this eval its score, not the rest of the run.
+      const { headline, report } = describeFailure({
+        role: 'grader', error, trace: '', reason: null,
+        elapsedMs: Date.now() - graderStart, timeoutMs: graderTimeoutMs, model: graderModel,
+      });
+      fs.writeFileSync(`${base}.grading.error.txt`, `${report}--- stdout ---\n${String(error.stdout || '')}`);
+      console.log(`  ✗  eval ${ev.id}: grader failed: ${headline} — see ${path.relative(ROOT, base)}.grading.error.txt`);
+      failures++;
+      continue;
+    }
     let gradingError = 'grader returned invalid JSON';
     const grading = parseGrading(raw, ev.expectations, (reason) => { gradingError = reason; });
     const runMeta = {
       executor_model: extractExecutorModel(trace),
-      grader_model: 'unknown',
+      grader_model: graderModel || 'default',
       timestamp: new Date().toISOString(),
     };
     if (!persistGradingOutcome(base, grading, raw, runMeta)) {
@@ -807,12 +924,41 @@ function main(args = process.argv.slice(2)) {
       process.exit(1);
     }
   }
+  // Behavioral-only options. A flag wins over its environment variable.
+  const valueOf = (flag) => {
+    const i = args.indexOf(flag);
+    if (i === -1) return undefined;
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith('--') || !value.trim()) {
+      console.error(`${flag} needs a value`);
+      process.exit(1);
+    }
+    return value;
+  };
+  const behavioralOnly = ['--model', '--grader-model', '--timeout', '--soak'].filter((f) => args.includes(f));
+  if (bIdx === -1 && behavioralOnly.length) {
+    console.error(`${behavioralOnly.join(', ')} ${behavioralOnly.length > 1 ? 'apply' : 'applies'} only to behavioral evals`);
+    process.exit(1);
+  }
   if (bIdx !== -1) {
     if (minRank1 !== null) {
       console.error('--min-rank1 applies only to deterministic evals');
       process.exit(1);
     }
-    runBehavioral(args[bIdx + 1], args.includes('--dry-run'), evalId);
+    const model = valueOf('--model') ?? (process.env.EVAL_MODEL || null);
+    const graderModel = valueOf('--grader-model') ?? (process.env.EVAL_GRADER_MODEL || model);
+    const rawTimeout = valueOf('--timeout');
+    let timeoutMinutes = null;
+    if (rawTimeout !== undefined) {
+      timeoutMinutes = Number(rawTimeout);
+      if (!validTimeout(timeoutMinutes)) {
+        console.error(`--timeout must be a number of minutes greater than 0 and at most ${MAX_TIMEOUT_MIN}`);
+        process.exit(1);
+      }
+    }
+    runBehavioral(args[bIdx + 1], args.includes('--dry-run'), evalId, {
+      model, graderModel, timeoutMinutes, soak: args.includes('--soak'),
+    });
   } else {
     runDeterministic(minRank1);
   }
@@ -820,4 +966,4 @@ function main(args = process.argv.slice(2)) {
 
 if (require.main === module) main();
 
-module.exports = { materializeWorkspace, stageSkills, isolationBreach, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel };
+module.exports = { materializeWorkspace, stageSkills, isolationBreach, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel, terminalResult, describeFailure };
