@@ -662,6 +662,18 @@ function extractExecutorModel(trace) {
   return null;
 }
 
+// Fixtures are copied into the workspace under their own names
+// (files: ["test-plan"] lands at <workspace>/test-plan/), and that is the
+// project the agent works in. So check paths resolve against the fixture
+// directory when the eval has exactly one, and against the workspace root
+// otherwise (several fixtures, single files, or a dialogue eval).
+function checksRoot(ev, workspace) {
+  const files = ev.files || [];
+  if (files.length !== 1) return workspace;
+  const dir = path.join(workspace, files[0]);
+  return fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? dir : workspace;
+}
+
 // The last stream-json result event, which carries the run's real outcome:
 // API errors (a 429 usage limit, for example), turns and cost.
 function terminalResult(trace) {
@@ -871,7 +883,7 @@ function runBehavioral(skillName, dryRun, evalId = null, options = {}) {
     }
     // Mechanical expectations are checked by code against the workspace,
     // before it is removed; the model grader sees only the judgment ones.
-    const checks = runChecks(ev.checks, { workspace, trace, skillName, checksDir: CHECKS_DIR });
+    const checks = runChecks(ev.checks, { workspace: checksRoot(ev, workspace), trace, skillName, checksDir: CHECKS_DIR });
     for (const c of checks) {
       console.log(`  ${c.passed ? '✓' : '✗'}  eval ${ev.id} check ${c.id}: ${c.passed ? 'passed' : `failed — ${c.evidence}`}`);
     }

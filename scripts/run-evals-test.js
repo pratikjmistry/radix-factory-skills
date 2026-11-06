@@ -87,7 +87,9 @@ function runBehavioralWithGrading(root, raw, options = {}) {
   const stub = path.join(root, 'stub-claude.cjs');
   fs.writeFileSync(stub, `
     const assert = require('node:assert/strict');
+    const realExecFileSync = require('child_process').execFileSync;
     require('child_process').execFileSync = (command, args, opts = {}) => {
+      if (command === 'git') return realExecFileSync(command, args, opts);
       assert.equal(command, 'claude');
       const executor = args.includes('--output-format');
       const fs = require('node:fs');
@@ -840,6 +842,153 @@ test('steps-clean checks data tables and doc strings, not tags or comments', () 
 test('steps-clean does not flag dates, times or a stack name inside another word', () => {
   const out = runTp('steps-clean', { feature: tpFeature({ step: 'When the node owner opens the account on 2026/03/10 at 09:00' }) }, { forbidden: ['Node.js'] });
   assert.equal(out.passed, true, out.evidence);
+});
+
+test('matrix-tags-agree treats a BAC tag on a Non-Negotiable scenario as context', () => {
+  const nn = '\n  @FR-1 @BAC-1 @VC-3\n  Scenario: no outside email\n    Then no email goes to an outside address\n';
+  assert.equal(runTp('matrix-tags-agree', { feature: tpFeature() + nn }).passed, true);
+  // ...but a BAC-proving VC on that scenario makes its BAC tags a matrix claim again.
+  const mixed = nn.replace('@VC-3', '@VC-3 @VC-2').replace('@BAC-1', '@BAC-1 @BAC-2');
+  const out = runTp('matrix-tags-agree', { feature: tpFeature() + mixed });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /@BAC-1 with @VC-3 @VC-2, but matrix row BAC-1 lists VC-1/);
+});
+
+test('checks run against the eval\'s single fixture directory, where the agent works', () => {
+  const root = makeSandbox();
+  try {
+    const checksModule = `
+      const { readText } = require('../../scripts/lib/eval-checks');
+      module.exports = { 'sees-fixture': ({ workspace }) => ({ passed: readText(workspace, 'context.txt') === 'fixture\\n', evidence: workspace }) };
+    `;
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      checksModule,
+      evalFields: { 1: { kind: 'execution', files: ['project'], checks: [check('C1', 'sees-fixture')] } },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const grading = JSON.parse(fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.grading.json'), 'utf8'));
+    assert.match(grading.checks[0].evidence, /[/\\]project$/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('tags-exist mustTag requires a scenario carrying each listed ID', () => {
+  assert.equal(runTp('tags-exist', {}, { mustTag: ['BAC-2'] }).passed, true);
+  const out = runTp('tags-exist', { feature: tpFeature({ twoTags: '@FR-1 @BAC-1 @VC-1' }) }, { mustTag: ['BAC-2'] });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /no scenario is tagged @BAC-2/);
+});
+
+// A Draft plan for an In Review PRD with three BACs and two blocking
+// questions: OQ 1 names BAC-3 directly, OQ 2 names FR-2 (BAC-2), and the
+// "CRM is the source" Non-Negotiable is blocked by OQ 3.
+const DRAFT_PRD = `${TP_PRD}| BAC-3 | FR-2 | Third, quickly and clearly. |
+`;
+const draftPlan = ({ bac1 = 'Covered', bac2 = 'Blocked (PRD OQ 2, via FR-2)', bac3 = 'Blocked (untestable)', nn = 'Blocked (PRD OQ 3)', vc4Level = 'integration', vc4State = 'Pending architecture', questions } = {}) => `# Test Plan
+**Status:** Draft
+
+## 3. Verification Criteria
+| VC | Proves | Criterion (pass/fail) | Level | Method | Doubles | Scenarios / reason | State |
+|----|--------|-----------------------|-------|--------|---------|--------------------|-------|
+| VC-1 | BAC-1 | x | unit | Scenario | none | one | Covered |
+| VC-2 | BAC-2 | x | e2e | Scenario | provisional | blocked | ${bac2} |
+| VC-3 | Non-Negotiable: CRM is the source of account data | x | integration | Scenario | provisional | blocked | ${nn} |
+| VC-4 | BAC-1 | sync within 24 h | ${vc4Level} | Scenario | provisional | sync | ${vc4State} |
+
+## 4. Coverage Matrix
+| BAC | FR | VCs | Scenarios | State |
+|-----|----|-----|-----------|-------|
+| BAC-1 | FR-1 | VC-1, VC-4 | one | ${bac1} |
+| BAC-2 | FR-2 | VC-2 | — | ${bac2} |
+| BAC-3 | FR-2 | — | — | ${bac3} |
+
+## 8. Open Questions
+| # | Question | Owner | Blocking? | Blocks |
+|---|----------|-------|-----------|--------|
+${questions ?? `| 1 | What does "quickly and clearly" mean for BAC-3? | PRD approver (via the BA) | Yes | BAC-3 |
+| 2 | Which browsers? | Elena Brandt | No | — |`}
+`;
+const draftFeature = (tags = '@FR-1 @BAC-1 @VC-1') => `Feature: F1 Accounts
+  ${tags}
+  Scenario: one
+    Given an account "Acme"
+    Then they see "Acme"
+`;
+const BLOCKED_ARGS = { blocked: { 'BAC-2': [2] }, untestable: ['BAC-3'], nonNegotiables: [{ name: 'CRM is the source of account data', oqs: [3] }] };
+const draft = (overrides = {}) => ({ prd: DRAFT_PRD, plan: draftPlan(overrides), feature: draftFeature(overrides.tags) });
+
+test('blocked-as-expected passes on the expected blocks and citations', () => {
+  const out = runTp('blocked-as-expected', draft(), BLOCKED_ARGS);
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, overrides, evidence] of [
+  ['a generic block without the OQ number', { bac2: 'Blocked (open questions)' }, /BAC-2 State "Blocked \(open questions\)" does not cite OQ 2/],
+  ['the wrong OQ', { bac2: 'Blocked (PRD OQ 1)' }, /does not cite OQ 2/],
+  ['an expected block left Covered', { bac2: 'Covered' }, /BAC-2 should be Blocked citing OQ 2, State is "Covered"/],
+  ['an extra block', { bac1: 'Blocked (PRD OQ 3)' }, /BAC-1 is "Blocked \(PRD OQ 3\)" but no open question blocks it/],
+  ['an untestable BAC given a threshold instead', { bac3: 'Covered' }, /BAC-3 should be Blocked \(untestable\)/],
+  ['a blocked BAC with a scenario', { tags: '@FR-2 @BAC-2 @VC-1' }, /BAC-2 is blocked but a scenario is tagged @BAC-2/],
+  ['a Non-Negotiable VC not blocked by its question', { nn: 'Pending architecture' }, /VC-3 proves "CRM is the source of account data" and should be Blocked citing OQ 3/],
+]) {
+  test(`blocked-as-expected fails on ${name}`, () => {
+    const out = runTp('blocked-as-expected', draft(overrides), BLOCKED_ARGS);
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('blocked-as-expected reads OQ lists in several forms', () => {
+  for (const state of ['Blocked (PRD OQ 1, OQ 8)', 'Blocked (OQs 1 and 8)', 'Blocked (PRD OQ 8; OQ 1)', 'Blocked (OQ #1 / 8)']) {
+    const out = runTp('blocked-as-expected', draft({ bac2: state }), { ...BLOCKED_ARGS, blocked: { 'BAC-2': [1, 8] } });
+    assert.equal(out.passed, true, `${state}: ${out.evidence}`);
+  }
+});
+
+test('blocked-as-expected fails when no VC proves the Non-Negotiable', () => {
+  const out = runTp('blocked-as-expected', draft(), { ...BLOCKED_ARGS, nonNegotiables: [{ name: 'No outside email', oqs: [3] }] });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /no VC proves "No outside email"/);
+});
+
+test('integration-pending passes when integration VCs wait for the architecture', () => {
+  const out = runTp('integration-pending', draft(), { bacs: ['BAC-1'] });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, overrides, evidence] of [
+  ['a Covered integration VC', { vc4State: 'Covered' }, /VC-4 is integration-level with State "Covered"/],
+  ['a sync VC levelled e2e to dodge the rule', { vc4Level: 'e2e', vc4State: 'Covered' }, /BAC-1 has no integration-level VC/],
+]) {
+  test(`integration-pending fails on ${name}`, () => {
+    const out = runTp('integration-pending', draft(overrides), { bacs: ['BAC-1'] });
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('open-questions-shape passes on owned, flagged rows with Blocks IDs', () => {
+  const out = runTp('open-questions-shape', draft(), { mustBlock: ['BAC-3'] });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, questions, evidence] of [
+  ['a row with no owner', '| 1 | What does it mean? |  | Yes | BAC-3 |', /row 1 has no owner/],
+  ['a row with no blocking flag', '| 1 | What does it mean? | BA | Maybe | BAC-3 |', /row 1 Blocking\? is "Maybe"/],
+  ['a blocking row with IDs only in the question', '| 1 | What does BAC-3 mean? | BA | Yes | — |', /row 1 is blocking but lists no IDs in Blocks/],
+  ['a vague BAC nobody routed', '| 1 | Which browsers? | BA | Yes | VC-2 |', /no blocking question lists BAC-3 in Blocks/],
+]) {
+  test(`open-questions-shape fails on ${name}`, () => {
+    const out = runTp('open-questions-shape', draft({ questions }), { mustBlock: ['BAC-3'] });
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('open-questions-shape fails without a Blocks column', () => {
+  const plan = draftPlan().replace('| # | Question | Owner | Blocking? | Blocks |', '| # | Question | Owner | Blocking? | Notes |');
+  const out = runTp('open-questions-shape', { prd: DRAFT_PRD, plan, feature: draftFeature() }, {});
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /no Open Questions table with Owner and Blocks columns/);
 });
 
 for (const args of [['--eval'], ['--eval', 'not-a-number'], ['--eval', '1.5'], ['--eval', '9007199254740993']]) {

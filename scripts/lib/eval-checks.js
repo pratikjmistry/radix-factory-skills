@@ -3,8 +3,10 @@
 // Deterministic post-run checks for Tier-3 behavioral evals.
 //
 // A check is a function ({ workspace, trace, args }) => { passed, evidence }.
-// It runs after a complete execution, against the throwaway workspace, before
-// the workspace is removed. Mechanical expectations (a file exists, a value is
+// It runs after a complete execution, before the throwaway workspace is
+// removed. `workspace` is the project the agent worked in: the eval's
+// fixture directory when it has exactly one (fixtures land under their own
+// names), otherwise the workspace root. Check paths are relative to it. Mechanical expectations (a file exists, a value is
 // exact, sources are unchanged) belong here, not with the model grader: they
 // cost nothing to run and never disagree with themselves.
 //

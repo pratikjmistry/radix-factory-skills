@@ -46,11 +46,15 @@ function parsePlan(text) {
     if (/^VC$/i.test(head)) {
       const proves = col(t.header, /^proves$/i);
       const state = col(t.header, /^state$/i);
+      const level = col(t.header, /^level$/i);
       for (const row of t.rows) {
         const id = firstId(row[0], 'VC');
         if (!id) continue;
+        const provesText = proves === -1 ? row.slice(1).join(' ') : row[proves] || '';
         vcs.set(id, {
-          proves: idsIn(proves === -1 ? row.slice(1).join(' ') : row[proves], 'BAC'),
+          proves: idsIn(provesText, 'BAC'),
+          provesText,
+          level: (level === -1 ? '' : row[level] || '').trim(),
           state: (state === -1 ? row[row.length - 1] : row[state] || '').trim(),
         });
       }
@@ -180,6 +184,12 @@ function tagsExist({ workspace, args }) {
     for (const id of [...s.ids.FR, ...s.ids.BAC]) if (!defined.has(id)) problems.push(`${where(s)} @${id} is not defined in the PRD`);
     for (const id of s.ids.VC) if (!vcs.has(id)) problems.push(`${where(s)} @${id} is not in the VC table`);
   }
+  // args.mustTag: IDs that at least one scenario must carry (an unblocked
+  // BAC in a Draft plan still gets a scenario).
+  for (const id of args.mustTag || []) {
+    const kind = id.split('-')[0];
+    if (!scenarios.some((s) => (s.ids[kind] || []).includes(id))) problems.push(`no scenario is tagged @${id}`);
+  }
   return problems.length
     ? { passed: false, evidence: summarize(problems) }
     : { passed: true, evidence: `${scenarios.length} scenarios carry ${required.join(', ')} tags, all defined` };
@@ -190,6 +200,9 @@ function tagsExist({ workspace, args }) {
 // (b) no scenario is tagged with a Blocked or Withdrawn VC;
 // (c) a scenario's @BAC-x is backed by one of its @VC tags in matrix row
 //     BAC-x, and a scenario's @VC-y that proves BACs is tagged with one of them.
+//     A scenario whose VCs prove no BAC (a Non-Negotiable, N-x or NFR check)
+//     still carries a BAC tag because the skill requires one on every
+//     scenario, so its BAC tags are context, not a matrix claim.
 function matrixTagsAgree({ workspace, args }) {
   const plan = loadOrFail(workspace, opt(args, 'plan'));
   if (plan.missing) return { passed: false, evidence: plan.missing };
@@ -209,7 +222,9 @@ function matrixTagsAgree({ workspace, args }) {
         problems.push(`${where(s)} @${id} proves ${vc.proves.join(', ')} but the scenario is tagged ${s.ids.BAC.map((b) => `@${b}`).join(' ') || 'with no BAC'}`);
       }
     }
-    for (const bac of s.ids.BAC) {
+    const provesBacs = s.ids.VC.some((v) => vcs.get(v)?.proves.length);
+    const unknownVc = s.ids.VC.some((v) => !vcs.has(v));
+    for (const bac of provesBacs || unknownVc || !s.ids.VC.length ? s.ids.BAC : []) {
       const row = matrix.get(bac);
       if (!row) problems.push(`${where(s)} @${bac} has no coverage-matrix row`);
       else if (!s.ids.VC.some((v) => row.vcs.includes(v))) {
@@ -220,6 +235,116 @@ function matrixTagsAgree({ workspace, args }) {
   return problems.length
     ? { passed: false, evidence: summarize(problems) }
     : { passed: true, evidence: `${vcs.size} VCs and ${scenarios.length} scenarios agree with the coverage matrix` };
+}
+
+// Open-question numbers a State cell cites: "Blocked (PRD OQ 2)",
+// "Blocked (PRD OQ 1, OQ 8)", "Blocked (OQs 1 and 8)" all count.
+function citedOqs(text) {
+  const out = new Set();
+  for (const m of String(text).matchAll(/\bOQs?\s*#?\s*(\d+(?:\s*(?:,|and|&|\/)\s*(?:OQ\s*#?\s*)?\d+)*)/gi)) {
+    for (const n of m[1].match(/\d+/g)) out.add(Number(n));
+  }
+  return out;
+}
+const isBlocked = (state) => /^blocked\b/i.test(String(state).trim());
+
+// Exactly the expected BACs are Blocked, each citing its open question(s);
+// untestable BACs are Blocked (untestable); no Blocked BAC has a scenario;
+// and each named Non-Negotiable's VCs are Blocked citing their question.
+// args: { blocked: { "BAC-n": [oq, ...] }, untestable: ["BAC-n"],
+//         nonNegotiables: [{ name, oqs: [oq, ...] }] }
+function blockedAsExpected({ workspace, args }) {
+  const prd = loadOrFail(workspace, opt(args, 'prd'));
+  const plan = loadOrFail(workspace, opt(args, 'plan'));
+  if (prd.missing || plan.missing) return { passed: false, evidence: prd.missing || plan.missing };
+  const bacs = [...prdIds(prd.text)].filter((id) => id.startsWith('BAC-'));
+  const { vcs, matrix } = parsePlan(plan.text);
+  const { scenarios } = parseFeatures(workspace, opt(args, 'dir'));
+  const blocked = args.blocked || {};
+  const untestable = new Set(args.untestable || []);
+  const problems = [];
+  for (const id of bacs) {
+    const state = matrix.get(id)?.state || '';
+    if (blocked[id]) {
+      if (!isBlocked(state)) problems.push(`${id} should be Blocked citing OQ ${blocked[id].join(', ')}, State is "${state || 'missing'}"`);
+      else {
+        const cited = citedOqs(state);
+        const missing = blocked[id].filter((n) => !cited.has(n));
+        if (missing.length) problems.push(`${id} State "${state}" does not cite OQ ${missing.join(', ')}`);
+      }
+    } else if (untestable.has(id)) {
+      if (!isBlocked(state) || !/untestable/i.test(state)) problems.push(`${id} should be Blocked (untestable), State is "${state || 'missing'}"`);
+    } else if (isBlocked(state)) {
+      problems.push(`${id} is "${state}" but no open question blocks it`);
+    }
+    if ((blocked[id] || untestable.has(id)) && scenarios.some((s) => s.ids.BAC.includes(id))) {
+      problems.push(`${id} is blocked but a scenario is tagged @${id}`);
+    }
+  }
+  for (const nn of args.nonNegotiables || []) {
+    const proving = [...vcs].filter(([, vc]) => vc.provesText.toLowerCase().includes(nn.name.toLowerCase()));
+    if (!proving.length) problems.push(`no VC proves "${nn.name}"`);
+    for (const [vcId, vc] of proving) {
+      const cited = citedOqs(vc.state);
+      if (!isBlocked(vc.state) || nn.oqs.some((n) => !cited.has(n))) {
+        problems.push(`${vcId} proves "${nn.name}" and should be Blocked citing OQ ${nn.oqs.join(', ')}, State is "${vc.state}"`);
+      }
+    }
+  }
+  return problems.length
+    ? { passed: false, evidence: summarize(problems) }
+    : { passed: true, evidence: `Blocked exactly ${[...Object.keys(blocked), ...untestable].join(', ')} with their reasons; Non-Negotiable VCs blocked as expected` };
+}
+
+// Without an architecture, no integration VC may be Covered: its State is
+// Pending architecture (or Blocked). args.bacs: BACs that must have at least
+// one integration-level VC, so the rule can't be dodged by levelling them e2e.
+function integrationPending({ workspace, args }) {
+  const plan = loadOrFail(workspace, opt(args, 'plan'));
+  if (plan.missing) return { passed: false, evidence: plan.missing };
+  const { vcs } = parsePlan(plan.text);
+  const integration = [...vcs].filter(([, vc]) => /integration/i.test(vc.level));
+  const problems = [];
+  for (const [id, vc] of integration) {
+    if (!/^(pending architecture|blocked)\b/i.test(vc.state)) problems.push(`${id} is integration-level with State "${vc.state}"`);
+  }
+  for (const bac of args.bacs || []) {
+    if (!integration.some(([, vc]) => vc.proves.includes(bac))) problems.push(`${bac} has no integration-level VC`);
+  }
+  return problems.length
+    ? { passed: false, evidence: summarize(problems) }
+    : { passed: true, evidence: `${integration.length} integration VCs, none Covered; ${(args.bacs || []).join(', ') || 'no BACs'} have one` };
+}
+
+// The plan's Open Questions table has Owner, Blocking? and Blocks columns;
+// every row has an owner and a yes/no blocking flag, every blocking row lists
+// the IDs it blocks, and each args.mustBlock ID is blocked by some row.
+function openQuestionsShape({ workspace, args }) {
+  const plan = loadOrFail(workspace, opt(args, 'plan'));
+  if (plan.missing) return { passed: false, evidence: plan.missing };
+  const table = markdownTables(plan.text).find((t) => col(t.header, /^owner$/i) !== -1 && col(t.header, /^blocks$/i) !== -1);
+  if (!table) return { passed: false, evidence: 'no Open Questions table with Owner and Blocks columns' };
+  const owner = col(table.header, /^owner$/i);
+  const blocking = col(table.header, /^blocking\??$/i);
+  const blocks = col(table.header, /^blocks$/i);
+  if (blocking === -1) return { passed: false, evidence: 'the Open Questions table has no Blocking? column' };
+  const problems = [];
+  const blockedIds = new Set();
+  table.rows.forEach((row, i) => {
+    const label = `row ${row[0] || i + 1}`;
+    if (!(row[owner] || '').trim()) problems.push(`${label} has no owner`);
+    const flag = (row[blocking] || '').trim();
+    if (!/^(yes|no)\b/i.test(flag)) problems.push(`${label} Blocking? is "${flag}", not Yes or No`);
+    const ids = String(row[blocks] || '').match(/\b(?:BAC|VC|FR|NFR|N)-\d+\b/g) || [];
+    if (/^yes\b/i.test(flag)) {
+      if (!ids.length) problems.push(`${label} is blocking but lists no IDs in Blocks`);
+      for (const id of ids) blockedIds.add(id.replace(/-0*(\d+)$/, '-$1'));
+    }
+  });
+  for (const id of args.mustBlock || []) if (!blockedIds.has(id)) problems.push(`no blocking question lists ${id} in Blocks`);
+  return problems.length
+    ? { passed: false, evidence: summarize(problems) }
+    : { passed: true, evidence: `${table.rows.length} open questions, each with an owner and flag; blocking rows list IDs` };
 }
 
 // No step contains implementation detail a pattern can see: URLs, HTTP
@@ -255,6 +380,9 @@ module.exports = {
   'tags-exist': tagsExist,
   'matrix-tags-agree': matrixTagsAgree,
   'steps-clean': stepsClean,
+  'blocked-as-expected': blockedAsExpected,
+  'integration-pending': integrationPending,
+  'open-questions-shape': openQuestionsShape,
   // exposed for tests
   _parsePlan: parsePlan,
   _parseFeatures: parseFeatures,
