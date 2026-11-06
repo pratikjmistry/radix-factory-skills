@@ -747,6 +747,7 @@ function tpWorkspace(parts = {}) {
   write(root, 'docs/PRD.md', parts.prd ?? TP_PRD);
   if (parts.plan !== null) write(root, 'docs/TEST-PLAN.md', parts.plan ?? tpPlan());
   if (parts.feature !== null) write(root, 'tests/features/f1-accounts.feature', parts.feature ?? tpFeature());
+  if (parts.constraints) write(root, 'CONSTRAINTS.md', parts.constraints);
   return root;
 }
 
@@ -844,14 +845,62 @@ test('steps-clean does not flag dates, times or a stack name inside another word
   assert.equal(out.passed, true, out.evidence);
 });
 
-test('matrix-tags-agree treats a BAC tag on a Non-Negotiable scenario as context', () => {
-  const nn = '\n  @FR-1 @BAC-1 @VC-3\n  Scenario: no outside email\n    Then no email goes to an outside address\n';
-  assert.equal(runTp('matrix-tags-agree', { feature: tpFeature() + nn }).passed, true);
-  // ...but a BAC-proving VC on that scenario makes its BAC tags a matrix claim again.
-  const mixed = nn.replace('@VC-3', '@VC-3 @VC-2').replace('@BAC-1', '@BAC-1 @BAC-2');
-  const out = runTp('matrix-tags-agree', { feature: tpFeature() + mixed });
+const nnScenario = (tags) => `\n  ${tags}\n  Scenario: no outside email\n    Then no email goes to an outside address\n`;
+
+test('tags-exist accepts @NN- or @N- in place of @BAC- on a Non-Negotiable scenario', () => {
+  for (const tags of ['@NN-no-outside-email @VC-3', '@N-1 @VC-3']) {
+    const out = runTp('tags-exist', { feature: tpFeature() + nnScenario(tags) });
+    assert.equal(out.passed, true, `${tags}: ${out.evidence}`);
+  }
+});
+
+for (const [name, tags, parts, evidence] of [
+  ['a scenario with neither a BAC nor an NN/N tag', '@VC-3', {}, /"no outside email" has no @BAC-, @NN- or @N- tag/],
+  ['a BAC tag without its FR tag', '@BAC-1 @VC-1', {}, /"no outside email" has a @BAC- tag but no @FR- tag/],
+  ['an @N- tag CONSTRAINTS.md does not define', '@N-9 @VC-3', { constraints: '| ID | Rule | Checked by |\n|---|---|---|\n| N-1 | x | lint |\n' }, /@N-9 is not a row in CONSTRAINTS.md/],
+]) {
+  test(`tags-exist fails on ${name}`, () => {
+    const out = runTp('tags-exist', { feature: tpFeature() + nnScenario(tags), ...parts });
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('tags-exist does not check @N- tags when there is no CONSTRAINTS.md', () => {
+  assert.equal(runTp('tags-exist', { feature: tpFeature() + nnScenario('@N-9 @VC-3') }).passed, true);
+});
+
+test('tags-exist require overrides the default tagging rule', () => {
+  const out = runTp('tags-exist', { feature: tpFeature() + nnScenario('@NN-no-outside-email @VC-3') }, { require: ['FR', 'BAC', 'VC'] });
   assert.equal(out.passed, false);
-  assert.match(out.evidence, /@BAC-1 with @VC-3 @VC-2, but matrix row BAC-1 lists VC-1/);
+  assert.match(out.evidence, /"no outside email" has no @FR- tag/);
+});
+
+test('matrix-tags-agree accepts a Non-Negotiable scenario tagged @NN- with no BAC tag', () => {
+  const out = runTp('matrix-tags-agree', { feature: tpFeature() + nnScenario('@NN-no-outside-email @VC-3') });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+test('matrix-tags-agree treats a BAC tag on a Non-Negotiable scenario as a matrix claim', () => {
+  const out = runTp('matrix-tags-agree', { feature: tpFeature() + nnScenario('@FR-1 @BAC-1 @VC-3') });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /@BAC-1 with @VC-3, but matrix row BAC-1 lists VC-1/);
+});
+
+test('matrix-tags-agree does not require a scenario for Tool check, Manual or Non-functional VCs', () => {
+  for (const row of [
+    '| VC-3 | N-1 | x | unit | Tool check | none | lint rule | Covered |',
+    '| VC-3 | N-1 | x | unit | Scenario | none | lint rule | Tool check |',
+    '| VC-3 | N-1 | x | unit | Manual | none | reviewer | Covered |',
+    '| VC-3 | NFR | x | non-functional | Scenario | none | load test | Non-functional |',
+  ]) {
+    const plan = tpPlan().replace('| VC-3 | N-1 | x | unit | Tool check | none | lint rule | Manual |', row);
+    const out = runTp('matrix-tags-agree', { plan });
+    assert.equal(out.passed, true, `${row}: ${out.evidence}`);
+  }
+  // A Scenario-method VC marked Covered with no tagged scenario still fails.
+  const plan = tpPlan().replace('| VC-3 | N-1 | x | unit | Tool check | none | lint rule | Manual |', '| VC-3 | N-1 | x | unit | Scenario | none | x | Covered |');
+  assert.match(runTp('matrix-tags-agree', { plan }).evidence, /VC-3 is Covered but no scenario is tagged @VC-3/);
 });
 
 test('checks run against the eval\'s single fixture directory, where the agent works', () => {
@@ -950,21 +999,49 @@ test('blocked-as-expected fails when no VC proves the Non-Negotiable', () => {
   assert.match(out.evidence, /no VC proves "No outside email"/);
 });
 
-test('integration-pending passes when integration VCs wait for the architecture', () => {
-  const out = runTp('integration-pending', draft(), { bacs: ['BAC-1'] });
+// BAC-1 in the draft plan depends on the CRM, so with bacs: ['BAC-1'] every
+// VC proving it (VC-1 and VC-4) must wait for the architecture.
+const pendingBac1 = (overrides = {}) => {
+  const parts = draft(overrides);
+  return { ...parts, plan: parts.plan.replace('| VC-1 | BAC-1 | x | unit | Scenario | none | one | Covered |', `| VC-1 | BAC-1 | x | ${overrides.vc1Level ?? 'unit'} | Scenario | provisional | one | ${overrides.vc1State ?? 'Pending architecture'} |`) };
+};
+
+test('integration-pending passes when integration-dependent VCs wait for the architecture, whatever their Level', () => {
+  for (const vc4Level of ['integration', 'e2e', 'unit']) {
+    const out = runTp('integration-pending', pendingBac1({ vc4Level }), { bacs: ['BAC-1'] });
+    assert.equal(out.passed, true, `${vc4Level}: ${out.evidence}`);
+  }
+  assert.equal(runTp('integration-pending', pendingBac1({ vc1State: 'Blocked (PRD OQ 4)' }), { bacs: ['BAC-1'] }).passed, true);
+});
+
+test('integration-pending lets a VC of an unlisted BAC at a non-integration Level be Covered', () => {
+  const out = runTp('integration-pending', draft(), {});
   assert.equal(out.passed, true, out.evidence);
 });
 
 for (const [name, overrides, evidence] of [
-  ['a Covered integration VC', { vc4State: 'Covered' }, /VC-4 is integration-level with State "Covered"/],
-  ['a sync VC levelled e2e to dodge the rule', { vc4Level: 'e2e', vc4State: 'Covered' }, /BAC-1 has no integration-level VC/],
+  ['a Covered integration-level VC', { vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Level integration\)/],
+  ['a listed BAC\'s VC levelled e2e and Covered', { vc4Level: 'e2e', vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Level e2e\)/],
+  ['a listed BAC\'s VC levelled unit and Covered', { vc1State: 'Covered' }, /VC-1 proves BAC-1, which depends on an external system, but has State "Covered" \(Level unit\)/],
 ]) {
   test(`integration-pending fails on ${name}`, () => {
-    const out = runTp('integration-pending', draft(overrides), { bacs: ['BAC-1'] });
+    const out = runTp('integration-pending', pendingBac1(overrides), { bacs: ['BAC-1'] });
     assert.equal(out.passed, false);
     assert.match(out.evidence, evidence);
   });
 }
+
+test('integration-pending flags a Covered integration-level VC of an unlisted BAC', () => {
+  const out = runTp('integration-pending', draft({ vc4State: 'Covered' }), {});
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /VC-4 is integration-level with State "Covered"/);
+});
+
+test('integration-pending fails when a listed BAC has no VC', () => {
+  const out = runTp('integration-pending', pendingBac1(), { bacs: ['BAC-1', 'BAC-3'] });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /BAC-3 has no VC/);
+});
 
 test('open-questions-shape passes on owned, flagged rows with Blocks IDs', () => {
   const out = runTp('open-questions-shape', draft(), { mustBlock: ['BAC-3'] });

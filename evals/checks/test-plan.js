@@ -8,7 +8,7 @@
 
 const { readText, listFiles, markdownTables, summarize, escapeRe } = require('../../scripts/lib/eval-checks');
 
-const DEFAULTS = { prd: 'docs/PRD.md', plan: 'docs/TEST-PLAN.md', dir: 'tests/features' };
+const DEFAULTS = { prd: 'docs/PRD.md', plan: 'docs/TEST-PLAN.md', dir: 'tests/features', constraints: 'CONSTRAINTS.md' };
 const opt = (args, key) => (args && args[key] !== undefined ? args[key] : DEFAULTS[key]);
 
 // "BAC-07", "**BAC-7**" and "BAC-7" all normalize to "BAC-7".
@@ -35,6 +35,16 @@ function prdIds(text) {
   return ids;
 }
 
+// N-x rows CONSTRAINTS.md defines: the first cell of a table row.
+function constraintIds(text) {
+  const ids = new Set();
+  for (const t of markdownTables(text)) for (const row of t.rows) {
+    const m = String(row[0]).trim().match(/^[~*_`\s]*N-0*(\d+)\b/);
+    if (m) ids.add(`N-${m[1]}`);
+  }
+  return ids;
+}
+
 const col = (header, re) => header.findIndex((h) => re.test(h.trim()));
 
 // TEST-PLAN.md's Verification Criteria table(s) and BAC coverage matrix.
@@ -47,6 +57,7 @@ function parsePlan(text) {
       const proves = col(t.header, /^proves$/i);
       const state = col(t.header, /^state$/i);
       const level = col(t.header, /^level$/i);
+      const method = col(t.header, /^method$/i);
       for (const row of t.rows) {
         const id = firstId(row[0], 'VC');
         if (!id) continue;
@@ -55,6 +66,7 @@ function parsePlan(text) {
           proves: idsIn(provesText, 'BAC'),
           provesText,
           level: (level === -1 ? '' : row[level] || '').trim(),
+          method: (method === -1 ? '' : row[method] || '').trim(),
           state: (state === -1 ? row[row.length - 1] : row[state] || '').trim(),
         });
       }
@@ -124,11 +136,13 @@ function parseFeatures(workspace, dir) {
       if (section && (STEP.test(t) || t.startsWith('|'))) steps.push({ ...at, text: t });
     });
   }
+  // @NN-<short-name> marks a Non-Negotiable NFR, @N-x a CONSTRAINTS.md row.
   for (const s of scenarios) {
-    s.ids = { FR: [], BAC: [], VC: [] };
+    s.ids = { FR: [], BAC: [], VC: [], NN: [], N: [] };
     for (const tag of s.tags) {
-      const m = tag.match(/^@(FR|BAC|VC)-0*(\d+)$/);
+      const m = tag.match(/^@(FR|BAC|VC|N)-0*(\d+)$/);
       if (m) s.ids[m[1]].push(`${m[1]}-${m[2]}`);
+      else if (/^@NN-[\w-]+$/.test(tag)) s.ids.NN.push(tag.slice(1));
     }
   }
   return { files, scenarios, steps };
@@ -167,8 +181,12 @@ function coverageHasAllBacs({ workspace, args }) {
     : { passed: true, evidence: `all ${bacs.length} PRD BACs are in the coverage matrix with a VC` };
 }
 
-// Every scenario carries each required tag kind, every @FR-/@BAC- tag is
-// defined in the PRD, and every @VC- tag is in TEST-PLAN.md's VC table.
+// The skill's tagging rule: every scenario carries a @VC- tag; one that
+// proves a BAC carries @BAC- and @FR-; one that proves only a Non-Negotiable
+// or an N-x row carries @NN-<short-name> or @N-x in place of a BAC tag.
+// Every @FR-/@BAC- tag is defined in the PRD, every @VC- tag is in
+// TEST-PLAN.md's VC table, and every @N-x is a CONSTRAINTS.md row when that
+// file exists. args.require: tag kinds every scenario must carry instead.
 function tagsExist({ workspace, args }) {
   const prd = loadOrFail(workspace, opt(args, 'prd'));
   const plan = loadOrFail(workspace, opt(args, 'plan'));
@@ -177,12 +195,21 @@ function tagsExist({ workspace, args }) {
   if (!scenarios.length) return { passed: false, evidence: `no scenarios under ${opt(args, 'dir')}` };
   const defined = prdIds(prd.text);
   const { vcs } = parsePlan(plan.text);
-  const required = args.require || ['FR', 'BAC', 'VC'];
+  const constraints = readText(workspace, opt(args, 'constraints'));
+  const nRows = constraints === null ? null : constraintIds(constraints);
   const problems = [];
   for (const s of scenarios) {
-    for (const kind of required) if (!s.ids[kind].length) problems.push(`${where(s)} "${s.name}" has no @${kind}- tag`);
+    const label = `${where(s)} "${s.name}"`;
+    if (args.require) {
+      for (const kind of args.require) if (!s.ids[kind].length) problems.push(`${label} has no @${kind}- tag`);
+    } else {
+      if (!s.ids.VC.length) problems.push(`${label} has no @VC- tag`);
+      if (s.ids.BAC.length && !s.ids.FR.length) problems.push(`${label} has a @BAC- tag but no @FR- tag`);
+      if (!s.ids.BAC.length && !s.ids.NN.length && !s.ids.N.length) problems.push(`${label} has no @BAC-, @NN- or @N- tag`);
+    }
     for (const id of [...s.ids.FR, ...s.ids.BAC]) if (!defined.has(id)) problems.push(`${where(s)} @${id} is not defined in the PRD`);
     for (const id of s.ids.VC) if (!vcs.has(id)) problems.push(`${where(s)} @${id} is not in the VC table`);
+    if (nRows) for (const id of s.ids.N) if (!nRows.has(id)) problems.push(`${where(s)} @${id} is not a row in CONSTRAINTS.md`);
   }
   // args.mustTag: IDs that at least one scenario must carry (an unblocked
   // BAC in a Draft plan still gets a scenario).
@@ -192,17 +219,19 @@ function tagsExist({ workspace, args }) {
   }
   return problems.length
     ? { passed: false, evidence: summarize(problems) }
-    : { passed: true, evidence: `${scenarios.length} scenarios carry ${required.join(', ')} tags, all defined` };
+    : { passed: true, evidence: `${scenarios.length} scenarios carry ${args.require ? args.require.join(', ') : 'VC and BAC/FR or NN/N'} tags, all defined` };
 }
 
 // The coverage matrix and the feature tags tell the same story:
-// (a) every VC whose State is Covered has a scenario tagged with it;
+// (a) every VC whose State is Covered has a scenario tagged with it, unless
+//     its Method or State says a scenario isn't how it is proved (Tool check,
+//     Manual, Non-functional);
 // (b) no scenario is tagged with a Blocked or Withdrawn VC;
 // (c) a scenario's @BAC-x is backed by one of its @VC tags in matrix row
 //     BAC-x, and a scenario's @VC-y that proves BACs is tagged with one of them.
-//     A scenario whose VCs prove no BAC (a Non-Negotiable, N-x or NFR check)
-//     still carries a BAC tag because the skill requires one on every
-//     scenario, so its BAC tags are context, not a matrix claim.
+//     A scenario that proves only a Non-Negotiable or N-x carries @NN-/@N-
+//     instead of a BAC tag, so every BAC tag is a matrix claim.
+const NOT_BY_SCENARIO = /\b(tool check|manual|non-functional)\b/i;
 function matrixTagsAgree({ workspace, args }) {
   const plan = loadOrFail(workspace, opt(args, 'plan'));
   if (plan.missing) return { passed: false, evidence: plan.missing };
@@ -212,6 +241,7 @@ function matrixTagsAgree({ workspace, args }) {
   const tagged = new Set(scenarios.flatMap((s) => s.ids.VC));
   const problems = [];
   for (const [id, vc] of vcs) {
+    if (NOT_BY_SCENARIO.test(vc.method) || NOT_BY_SCENARIO.test(vc.state)) continue;
     if (/^covered\b/i.test(vc.state) && !tagged.has(id)) problems.push(`${id} is Covered but no scenario is tagged @${id}`);
   }
   for (const s of scenarios) {
@@ -222,9 +252,7 @@ function matrixTagsAgree({ workspace, args }) {
         problems.push(`${where(s)} @${id} proves ${vc.proves.join(', ')} but the scenario is tagged ${s.ids.BAC.map((b) => `@${b}`).join(' ') || 'with no BAC'}`);
       }
     }
-    const provesBacs = s.ids.VC.some((v) => vcs.get(v)?.proves.length);
-    const unknownVc = s.ids.VC.some((v) => !vcs.has(v));
-    for (const bac of provesBacs || unknownVc || !s.ids.VC.length ? s.ids.BAC : []) {
+    for (const bac of s.ids.BAC) {
       const row = matrix.get(bac);
       if (!row) problems.push(`${where(s)} @${bac} has no coverage-matrix row`);
       else if (!s.ids.VC.some((v) => row.vcs.includes(v))) {
@@ -297,23 +325,37 @@ function blockedAsExpected({ workspace, args }) {
 }
 
 // Without an architecture, no integration VC may be Covered: its State is
-// Pending architecture (or Blocked). args.bacs: BACs that must have at least
-// one integration-level VC, so the rule can't be dodged by levelling them e2e.
+// Pending architecture (or Blocked). An integration VC is defined by what its
+// pass depends on, not its Level, so two sets are checked:
+// - every integration-level VC;
+// - every VC proving a BAC in args.bacs, whatever its Level. args.bacs lists
+//   BACs whose pass depends on a system the PRD names (CRM, directory, email
+//   delivery), so all their VCs are integration-dependent. Each listed BAC
+//   must have at least one VC.
+const WAITING = /^(pending architecture|blocked)\b/i;
 function integrationPending({ workspace, args }) {
   const plan = loadOrFail(workspace, opt(args, 'plan'));
   if (plan.missing) return { passed: false, evidence: plan.missing };
   const { vcs } = parsePlan(plan.text);
-  const integration = [...vcs].filter(([, vc]) => /integration/i.test(vc.level));
+  const bacs = args.bacs || [];
   const problems = [];
-  for (const [id, vc] of integration) {
-    if (!/^(pending architecture|blocked)\b/i.test(vc.state)) problems.push(`${id} is integration-level with State "${vc.state}"`);
+  let checked = 0;
+  for (const [id, vc] of vcs) {
+    const listed = vc.proves.filter((b) => bacs.includes(b));
+    const byLevel = /integration/i.test(vc.level);
+    if (!byLevel && !listed.length) continue;
+    checked += 1;
+    if (WAITING.test(vc.state)) continue;
+    problems.push(listed.length
+      ? `${id} proves ${listed.join(', ')}, which depends on an external system, but has State "${vc.state}" (Level ${vc.level || 'none'})`
+      : `${id} is integration-level with State "${vc.state}"`);
   }
-  for (const bac of args.bacs || []) {
-    if (!integration.some(([, vc]) => vc.proves.includes(bac))) problems.push(`${bac} has no integration-level VC`);
+  for (const bac of bacs) {
+    if (![...vcs.values()].some((vc) => vc.proves.includes(bac))) problems.push(`${bac} has no VC`);
   }
   return problems.length
     ? { passed: false, evidence: summarize(problems) }
-    : { passed: true, evidence: `${integration.length} integration VCs, none Covered; ${(args.bacs || []).join(', ') || 'no BACs'} have one` };
+    : { passed: true, evidence: `${checked} integration-dependent VCs${bacs.length ? ` (including every VC of ${bacs.join(', ')})` : ''}, each Pending architecture or Blocked` };
 }
 
 // The plan's Open Questions table has Owner, Blocking? and Blocks columns;

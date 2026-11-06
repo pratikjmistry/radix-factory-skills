@@ -1,6 +1,11 @@
 # One file per capability: a PRD user flow, a cross-cutting Non-Negotiable NFR,
 # or a group of FRs that no flow uses. Tags carry the traceability and must
-# match the coverage matrix in docs/TEST-PLAN.md.
+# match the coverage matrix in docs/TEST-PLAN.md:
+#   every scenario carries @VC-n;
+#   a scenario that proves a BAC also carries @BAC-n and its @FR-n;
+#   a scenario that proves only a Non-Negotiable NFR or a CONSTRAINTS.md row
+#   carries @NN-<short-name> or @N-x instead of a BAC tag, for example
+#   "@NN-no-outside-email @VC-20" or "@N-2 @VC-21" in access-control.feature.
 # Steps use the PRD's domain language only: no selectors, URLs, endpoints,
 # table or class names, or technology names.
 

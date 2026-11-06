@@ -47,10 +47,10 @@ PRD terms (FR, BAC, VC, Shared Contract, Non-Negotiable NFR, NFR) are used exact
 | **VC-n** | A Verification Criterion. IDs are global and sequential, never renumbered or reused. A dropped VC is marked `Withdrawn` with a reason. |
 | **Proves** | The BAC, NFR, Non-Negotiable NFR or `N-x` a VC checks. Every VC proves at least one. |
 | **Level** | `unit`, `integration`, `e2e` or `non-functional` |
-| **Integration VC** | A VC whose Level is `integration` because it crosses an external system or dependency the PRD names (source-of-record sync, directory, email delivery, etc.). |
+| **Integration VC** | Any VC, at any Level including `unit` and `e2e`, whose pass depends on an external system or dependency the PRD names (CRM or other source-of-record sync, directory, email delivery, etc.). It is defined by that dependency, not by its Level: levelling it `e2e` or `unit` does not exempt it from `Pending architecture`. |
 | **Method** | How a VC is checked. `Scenario`: one or more Gherkin scenarios. `Tool check`: a lint rule, architecture test, load test or similar named in `CONSTRAINTS.md` or the architecture. `Manual`: a named person checks it, with a reason why it can't be automated. |
 | **Capability** | The unit of one feature file: a PRD user flow, a cross-cutting Non-Negotiable NFR (such as access control), or a group of FRs that no flow uses |
-| **State** | Where a VC or a BAC stands, used in both the VC table and the coverage matrix. One of: `Covered` (a scenario proves it), `Manual`, `Non-functional`, `Blocked (…)` with the reason in brackets (`PRD OQ n` or `untestable`), `Pending architecture` or `Withdrawn`. A BAC is `untestable` only when it has no observable outcome, or a pass/fail condition it needs is missing or subjective ("quickly", "clearly", "user-friendly"). A BAC whose conditions and outcome are stated is testable. Before marking a BAC or NFR untestable, resolve its references: a term it points elsewhere for (the FRs or BACs it lists, the glossary, the Shared Contract) is defined there. |
+| **State** | Where a VC or a BAC stands, used in both the VC table and the coverage matrix. One of: `Covered` (a scenario proves it, and nothing else counts as Covered), `Tool check` (its Method is `Tool check` and the tool is named), `Manual`, `Non-functional`, `Blocked (…)` with the reason in brackets (`PRD OQ n` or `untestable`), `Pending architecture` or `Withdrawn`. A BAC is `untestable` only when it has no observable outcome, or a pass/fail condition it needs is missing or subjective ("quickly", "clearly", "user-friendly"). A BAC whose conditions and outcome are stated is testable. Before marking a BAC or NFR untestable, resolve its references: a term it points elsewhere for (the FRs or BACs it lists, the glossary, the Shared Contract) is defined there. |
 | **Routed question** | A question this skill can't answer and must send to its owner. The rule is the same as in `write-prd`'s Step 2.8. The IDs it blocks go in the Open Questions table's own **Blocks** column, not in the question text. |
 
 ## The Process
@@ -63,7 +63,7 @@ Read the **Status** of `docs/PRD.md` and of `docs/ARCHITECTURE.md` before anythi
 |---|---|---|
 | PRD `Draft`, missing, or no status | **Refuse.** Write no test plan and no feature files. Tell the human the PRD must reach review first, and route them to the BA (`write-prd`). | — |
 | PRD `In Review` or `Ready for approval` | Draft only. A BAC is `Blocked (PRD OQ n)` when a blocking open question names it, or names the FR it links to. Cite the specific question. A Blocked BAC gets a VC row but no executable scenario. A Shared Contract item named by a blocking question blocks its VC the same way. | `Draft` |
-| `ARCHITECTURE.md` missing or below `Ready for design review` (PRD `In Review` or later) | Write the functional VCs and scenarios. Mark levels and doubles `provisional`. List NFR VCs as `Pending architecture`. An integration VC may have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal. Complete the pending VCs in a second pass after design review. | `Draft` |
+| `ARCHITECTURE.md` missing or below `Ready for design review` (PRD `In Review` or later) | Write the functional VCs and scenarios. Mark levels and doubles `provisional`. List NFR VCs as `Pending architecture`. An integration VC (any VC whose pass depends on an external system the PRD names, whatever Level you give it) may have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal. Complete the pending VCs in a second pass after design review. | `Draft` |
 | A BAC is untestable (PRD `In Review` or later): it has no observable outcome, or a pass/fail condition it needs is missing or subjective ("quickly", "clearly", "user-friendly") | That BAC is `Blocked (untestable)`, with a blocking routed question to the PRD's approver (via the BA) that names it. Don't invent the missing number. Every other BAC proceeds. A BAC whose conditions and outcome are stated is testable: write its VCs from its literal text. An edge case the BAC doesn't mention, or a possible interaction with another BAC or FR, is not a reason to block it. Raise it as a routed question, blocking only if the answer would contradict the BAC's stated text. Before marking a BAC or NFR untestable, resolve its references. A term it points elsewhere for (the FRs or BACs it lists, the glossary, the Shared Contract) is defined there: write the VC from the referenced text, one VC per referenced FR where the values differ. If the wording could be clearer but the reference resolves, raise a non-blocking routed question instead of blocking. | `Draft` |
 | PRD `Approved`, architecture at `Ready for design review` or later, nothing blocked | Full run | `Ready for review` |
 
@@ -104,7 +104,7 @@ A VC states a condition that passes or fails. "Search works well" is not a VC. "
 
 For each VC, pick the lowest level that can prove it. Pick unit when the rule is pure logic. Pick integration when it crosses a component or an external system. Pick e2e only for a whole user flow or an access rule that must hold on every route.
 
-For each integration, use the double the architecture names: a fake source system, a captured mail outbox or a fixed clock. No VC may need a live external system to pass. When the architecture is missing or below `Ready for design review`, mark the level and doubles `provisional`. An integration VC may still have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal.
+For each integration, use the double the architecture names: a fake source system, a captured mail outbox or a fixed clock. No VC may need a live external system to pass. When the architecture is missing or below `Ready for design review`, mark the level and doubles `provisional`. Decide whether a VC is an integration VC by what its pass depends on, before choosing its Level: if it needs the CRM, the directory, email delivery or another external system the PRD names, it is one, and choosing `e2e` or `unit` doesn't change that. An integration VC may still have its scenario drafted, but its State is `Pending architecture`, never `Covered`, until the architecture names its double. Functional VCs that cross no external system proceed as normal.
 
 The architecture chooses *how*, never *what*. If it describes behaviour the PRD and `CONSTRAINTS.md` don't require, don't write a VC for it. If it seems to need one, ask the architect.
 
@@ -119,7 +119,10 @@ Every FR that isn't withdrawn or blocked appears in the tags of at least one fil
 
 Follow [templates/capability.feature](templates/capability.feature):
 
-- **Tags.** Each scenario carries `@FR-n @BAC-n @VC-n` for what it proves. The tags are the traceability, so they must match the coverage matrix.
+- **Tags.** The tags are the traceability, so they must match the coverage matrix:
+  - Every scenario carries `@VC-n` for each VC it proves.
+  - A scenario that proves a BAC also carries `@BAC-n` and that BAC's `@FR-n`.
+  - A scenario that proves only a Non-Negotiable NFR or an `N-x` row carries `@VC-n` plus `@NN-<short-name>` (for example `@NN-no-outside-email`) or `@N-x` (for example `@N-2`) instead of a BAC tag. Never add a BAC tag a scenario doesn't prove just to have one.
 - **Domain language only.** Steps use the PRD's words for actors, entities and states. They contain no UI selectors, URLs, endpoints, HTTP verbs, table or class names, or framework names. "Given the member has booked a table for 2026-12-10 at 19:00", not "Given a POST to /api/bookings".
 - **Concrete values.** Use the BAC's example dates, numbers and states. Use `Scenario Outline` with `Examples` when one BAC has several cases (for example, one row per membership level).
 - **Deterministic.** A `Background` fixes the date, time and time zone when time matters. Never write a bare "today". Scenarios don't depend on each other's data.
@@ -150,7 +153,11 @@ Run every item below against the written files, not against your memory. Fix wha
 3. Report:
    - the PRD and architecture statuses you worked from
    - the counts of BACs, VCs (by method) and scenarios
-   - the checklist result as one line per ID, T1 to T15, each pass or fail with what is missing. Never a blanket "all pass".
+   - the checklist result: exactly one line per item, T1 to T15 in order, each in one of two forms. Never a blanket "all pass", and never two items on one line.
+     ```
+     T<n>: pass — <evidence>
+     T<n>: fail — <what is missing>
+     ```
    - every Blocked item, and the routed questions
 4. **Stop.** Never set `Approved`. The test plan's review is the human's gate.
 
@@ -161,7 +168,7 @@ Report results by ID.
 **Traceability**
 - [ ] **T1** Every BAC that isn't withdrawn has at least one VC.
 - [ ] **T2** Every VC proves at least one existing BAC, NFR, Non-Negotiable NFR or `N-x`. No VC has an invented source.
-- [ ] **T3** Every VC has at least one scenario, or its Method is `Manual` or `Tool check` with a stated reason.
+- [ ] **T3** Every VC has at least one scenario, or its Method is `Manual` or `Tool check` with a stated reason. A `Tool check` VC names its tool and has State `Tool check`, not `Covered`: only a scenario makes a VC `Covered`.
 - [ ] **T4** Every Non-Negotiable NFR and every `CONSTRAINTS.md` non-negotiable has at least one VC with an observable pass/fail condition.
 - [ ] **T5** Every NFR has a VC carrying the PRD's measurable target, or an ADR's tighter or decomposed version of it. No VC uses an architecture value looser than the PRD. Such a conflict is resolved by precedence (the PRD wins) and raised as a routed question to the architect.
 - [ ] **T6** Every PRD edge case is covered by a scenario or a VC.
@@ -173,7 +180,7 @@ Report results by ID.
 - [ ] **T10** Every VC's level and doubles trace to an architecture component or integration, or are marked `provisional`.
 
 **Scenarios**
-- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries FR, BAC and VC tags. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
+- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries a VC tag. A scenario that proves a BAC also carries its BAC and FR tags; one that proves only a Non-Negotiable NFR or an `N-x` carries `@NN-<short-name>` or `@N-x` instead. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
 - [ ] **T12** No step contains implementation detail (selectors, URLs, endpoints, table or class names, technology names). Steps use the PRD's vocabulary and the BACs' example values.
 - [ ] **T13** Scenarios are deterministic: explicit dates, times and time zones, a fixed clock where time matters, no bare "today", and no dependence on another scenario.
 
@@ -208,6 +215,8 @@ Report results by ID.
 - `Blocked (untestable)` on an item whose missing value is stated in an FR or BAC it references
 - A `CONSTRAINTS.md` non-negotiable with no VC
 - A "Covered" matrix row whose scenario tag isn't found in any feature file
+- An integration-dependent VC levelled `e2e` or `unit` and marked `Covered` without an architecture
+- A `Tool check` VC marked `Covered`, or a Non-Negotiable scenario carrying a BAC tag it doesn't prove
 
 ## Verification
 
@@ -218,7 +227,7 @@ Before handing off for review, confirm:
 - [ ] Every feature file is in `tests/features/` and is listed in the plan's feature index
 - [ ] `git diff docs/PRD.md docs/ARCHITECTURE.md docs/adr CONSTRAINTS.md` is empty
 - [ ] Searching the feature files for `@BAC-` finds every BAC the matrix marks `Covered`
-- [ ] Every checklist item T1–T15 passes against the files, and the result is reported as one line per ID with pass or fail and what is missing, not a blanket "all pass"
+- [ ] Every checklist item T1–T15 passes against the files, and the result is reported as exactly one line per item, T1 to T15 in order, as `T<n>: pass — <evidence>` or `T<n>: fail — <what is missing>`
 - [ ] Status is no higher than Step 1 allows, and nothing is marked `Approved` by the agent
 
 ## See Also

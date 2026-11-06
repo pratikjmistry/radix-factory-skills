@@ -38,20 +38,20 @@
 
 | VC | Proves | Criterion (pass/fail) | Level | Method | Doubles | Scenarios / reason | State |
 |----|--------|-----------------------|-------|--------|---------|--------------------|-------|
-| VC-1 | [BAC-n / NFR name / Non-Negotiable / N-x] | [Observable condition with the source's numbers] | [unit / integration / e2e / non-functional] | [Scenario / Tool check / Manual] | [Doubles or "none"] | [`file.feature` › Scenario name, or reason] | [Covered / Manual / Non-functional / Blocked (…) / Pending architecture / Withdrawn] |
+| VC-1 | [BAC-n / NFR name / Non-Negotiable / N-x] | [Observable condition with the source's numbers] | [unit / integration / e2e / non-functional] | [Scenario / Tool check / Manual] | [Doubles or "none"] | [`file.feature` › Scenario name, or reason] | [Covered (a scenario proves it) / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture / Withdrawn] |
 
 ## 4. Coverage Matrix
 
 ### Business Acceptance Criteria
 | BAC | FR | VCs | Scenarios | State |
 |-----|----|-----|-----------|-------|
-| [BAC-n] | [FR-n] | [VC-n, …] | [`file.feature` › Scenario name, …] | [Covered / Manual / Non-functional / Blocked (…) / Pending architecture / Withdrawn] |
+| [BAC-n] | [FR-n] | [VC-n, …] | [`file.feature` › Scenario name, …] | [Covered / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture / Withdrawn] |
 
 ### Shared Contract, constraints, NFRs and edge cases
 | Item | Source | VCs | State |
 |------|--------|-----|-------|
-| [Non-Negotiable NFR name] | PRD §8 | [VC-n] | [State] |
-| [N-x] | CONSTRAINTS.md | [VC-n] | [State] |
+| [Non-Negotiable NFR name] | PRD §8 | [VC-n] | [Covered / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture] |
+| [N-x] | CONSTRAINTS.md | [VC-n] | [State, e.g. Tool check when its *Checked by* tool proves it] |
 | [NFR name] | PRD §9 | [VC-n] | [State] |
 | [Edge case #n] | PRD §10 | [VC-n or scenario] | [State] |
 

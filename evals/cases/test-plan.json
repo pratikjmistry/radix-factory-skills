@@ -77,12 +77,12 @@
         },
         {
           "id": "C3",
-          "text": "Every scenario carries @FR-, @BAC- and @VC- tags, and every tagged ID exists in the PRD or the test plan's VC table",
+          "text": "Every scenario carries a @VC- tag plus @BAC- and @FR- tags, or @NN-/@N- tags for a scenario that proves only a Non-Negotiable or N-x row, and every tagged ID exists in the PRD, CONSTRAINTS.md or the test plan's VC table",
           "check": "tags-exist"
         },
         {
           "id": "C4",
-          "text": "The coverage matrix and the feature tags agree: every Covered VC has a tagged scenario, no scenario is tagged with a Blocked or Withdrawn VC, and each scenario's BAC and VC tags match the matrix",
+          "text": "The coverage matrix and the feature tags agree: every Covered VC has a tagged scenario (Tool check, Manual and Non-functional VCs need none), no scenario is tagged with a Blocked or Withdrawn VC, and each scenario's BAC and VC tags match the matrix",
           "check": "matrix-tags-agree"
         },
         {
@@ -135,7 +135,7 @@
         "The agent identifies the PRD's Status as In Review before writing, and treats Draft as the highest Status the test plan may have",
         "BAC-7 ('quickly and clearly') gets no invented time threshold or field list; the routed question naming BAC-7 is owned by the PRD approver via the BA",
         "Because there is no docs/ARCHITECTURE.md, test levels and doubles are marked provisional, and NFR VCs are marked Pending architecture",
-        "Each VC that crosses a system the PRD names (the CRM, the company directory, email delivery) has Level integration rather than being levelled unit or e2e to avoid the Pending architecture rule, so BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are not Covered; functional VCs that cross no external system, such as BAC-2's due-date rule, may be Covered"
+        "VCs that depend on a system the PRD names (the CRM, the company directory, email delivery) are not Covered without an architecture, whatever Level they are given (unit, integration or e2e): BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are Pending architecture or Blocked; functional VCs that depend on no external system, such as BAC-2's due-date rule, may be Covered"
       ],
       "checks": [
         {
@@ -176,7 +176,7 @@
         },
         {
           "id": "C4",
-          "text": "No integration-level VC is Covered (each is Pending architecture or Blocked), and BAC-1's CRM sync has an integration-level VC",
+          "text": "No integration-dependent VC is Covered: every integration-level VC, and every VC of BAC-1's CRM sync whatever its Level, is Pending architecture or Blocked, and BAC-1 has at least one VC",
           "check": "integration-pending",
           "args": {
             "bacs": ["BAC-1"]
@@ -270,7 +270,7 @@
         },
         {
           "id": "C2",
-          "text": "Every scenario carries @FR-, @BAC- and @VC- tags, and every tagged ID exists in the PRD or the test plan's VC table",
+          "text": "Every scenario carries a @VC- tag plus @BAC- and @FR- tags, or @NN-/@N- tags for a scenario that proves only a Non-Negotiable or N-x row, and every tagged ID exists in the PRD, CONSTRAINTS.md or the test plan's VC table",
           "check": "tags-exist"
         },
         {
