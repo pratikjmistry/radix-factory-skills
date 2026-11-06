@@ -28,7 +28,11 @@
  *     model; --grader-model (or EVAL_GRADER_MODEL) sets the grader model and
  *     defaults to the executor's. With neither, claude's default is used.
  *     --timeout overrides the executor timeout; per-eval "timeout_minutes"
- *     and "grader_timeout_minutes" set it in the case file.
+ *     and "grader_timeout_minutes" set it in the case file. An eval's
+ *     "checks" are deterministic post-run checks (scripts/lib/eval-checks.js
+ *     built-ins, or evals/checks/<skill>.js); they run against the workspace
+ *     before the grader, and their results sit beside the grader's in
+ *     grading.json. Tier 2 validates every declared check.
  *
  * Zero dependencies. Exit code 1 on any error-level failure.
  */
@@ -40,6 +44,7 @@ const os = require('os');
 const path = require('path');
 const { parseFrontmatter } = require('./lib/skill-lint');
 const { executionFailure } = require('./lib/execution-status');
+const { validateChecks, runChecks } = require('./lib/eval-checks');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -47,6 +52,8 @@ const SKILLS_DIR = path.join(ROOT, 'skills');
 const CASES_DIR = path.join(ROOT, 'evals', 'cases');
 const FIXTURES_DIR = path.join(ROOT, 'evals', 'fixtures');
 const RESULTS_DIR = path.join(ROOT, 'evals', 'results');
+// Skill-specific deterministic checks: evals/checks/<skill>.js.
+const CHECKS_DIR = path.join(ROOT, 'evals', 'checks');
 // Every skill is staged into the eval workspace under this directory, so the
 // skill under test can reach its own templates/ and references/, and any skill
 // it names resolves to this repo's current version, not an installed plugin.
@@ -56,6 +63,7 @@ const SKILL_STAGE = '.agent-skills';
 // grader_timeout_minutes, and --timeout overrides the executor's.
 const EXECUTOR_TIMEOUT_MIN = 15;
 const GRADER_TIMEOUT_MIN = 5;
+const MIN_TIMEOUT_MIN = 1;
 const MAX_TIMEOUT_MIN = 60;
 
 // Tools the Tier-3 executor may use inside its throwaway workspace. Edits are
@@ -239,7 +247,7 @@ function resolveFixturePath(root, rel) {
 }
 
 function validTimeout(minutes) {
-  return typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0 && minutes <= MAX_TIMEOUT_MIN;
+  return typeof minutes === 'number' && Number.isFinite(minutes) && minutes >= MIN_TIMEOUT_MIN && minutes <= MAX_TIMEOUT_MIN;
 }
 
 function duplicateEvalIds(evals) {
@@ -349,12 +357,16 @@ function runDeterministic(minRank1) {
       }
       for (const field of ['timeout_minutes', 'grader_timeout_minutes']) {
         if (ev[field] !== undefined && !validTimeout(ev[field])) {
-          console.log(`  ✗  ${c.file}: eval id=${ev.id} ${field} must be a number greater than 0 and at most ${MAX_TIMEOUT_MIN}`);
+          console.log(`  ✗  ${c.file}: eval id=${ev.id} ${field} must be a number from ${MIN_TIMEOUT_MIN} to ${MAX_TIMEOUT_MIN}`);
           errors++;
         }
       }
       if (ev.soak !== undefined && typeof ev.soak !== 'boolean') {
         console.log(`  ✗  ${c.file}: eval id=${ev.id} soak must be true or false`);
+        errors++;
+      }
+      for (const problem of validateChecks(ev.checks, expected, CHECKS_DIR)) {
+        console.log(`  ✗  ${c.file}: eval id=${ev.id} ${problem}`);
         errors++;
       }
       if (fixtureRequired && ev.trust_level === 'provisional') {
@@ -705,17 +717,35 @@ function describeFailure({ role, error, trace, reason, elapsedMs, timeoutMs, mod
 }
 
 function clearGradingSlot(base) {
-  for (const suffix of ['grading.json', 'grading.raw.txt', 'grading.error.txt', 'execution.raw.txt', 'execution.error.txt']) {
+  for (const suffix of ['grading.json', 'grading.raw.txt', 'grading.error.txt', 'checks.json', 'execution.raw.txt', 'execution.error.txt']) {
     fs.rmSync(`${base}.${suffix}`, { force: true });
   }
 }
 
-function persistGradingOutcome(base, grading, raw, runMeta) {
+// Deterministic check results stand on their own when no grading.json is
+// written (grader failed or returned invalid output), so they are not lost.
+function writeChecks(base, checks) {
+  if (checks?.length) fs.writeFileSync(`${base}.checks.json`, JSON.stringify({ checks }, null, 2) + '\n');
+}
+
+// grading.json keeps skill-creator's shape (expectations + summary, graded by
+// the model) and adds the deterministic checks beside it, with their own
+// counters, so neither result is folded into the other's numbers.
+function persistGradingOutcome(base, grading, raw, runMeta, checks = []) {
   if (!grading) {
     fs.writeFileSync(`${base}.grading.raw.txt`, raw);
+    writeChecks(base, checks);
     return false;
   }
-  const output = runMeta ? { ...grading, run: runMeta } : grading;
+  let output = grading;
+  if (checks.length) {
+    output = {
+      ...output,
+      checks,
+      summary: { ...output.summary, checks_passed: checks.filter((c) => c.passed).length, checks_total: checks.length },
+    };
+  }
+  if (runMeta) output = { ...output, run: runMeta };
   fs.writeFileSync(`${base}.grading.json`, JSON.stringify(output, null, 2) + '\n');
   return true;
 }
@@ -839,6 +869,12 @@ function runBehavioral(skillName, dryRun, evalId = null, options = {}) {
       }
       continue;
     }
+    // Mechanical expectations are checked by code against the workspace,
+    // before it is removed; the model grader sees only the judgment ones.
+    const checks = runChecks(ev.checks, { workspace, trace, skillName, checksDir: CHECKS_DIR });
+    for (const c of checks) {
+      console.log(`  ${c.passed ? '✓' : '✗'}  eval ${ev.id} check ${c.id}: ${c.passed ? 'passed' : `failed — ${c.evidence}`}`);
+    }
     const gradingInstructions = kind === 'dialogue'
       ? [
         'You are grading an agent dialogue transcript against explicit expectations.',
@@ -869,6 +905,7 @@ function runBehavioral(skillName, dryRun, evalId = null, options = {}) {
         elapsedMs: Date.now() - graderStart, timeoutMs: graderTimeoutMs, model: graderModel,
       });
       fs.writeFileSync(`${base}.grading.error.txt`, `${report}--- stdout ---\n${String(error.stdout || '')}`);
+      writeChecks(base, checks);
       console.log(`  ✗  eval ${ev.id}: grader failed: ${headline} — see ${path.relative(ROOT, base)}.grading.error.txt`);
       failures++;
       continue;
@@ -880,13 +917,15 @@ function runBehavioral(skillName, dryRun, evalId = null, options = {}) {
       grader_model: graderModel || 'default',
       timestamp: new Date().toISOString(),
     };
-    if (!persistGradingOutcome(base, grading, raw, runMeta)) {
+    if (!persistGradingOutcome(base, grading, raw, runMeta, checks)) {
       console.log(`  ✗  eval ${ev.id}: ${gradingError} — raw saved to ${path.relative(ROOT, base)}.grading.raw.txt`);
       failures++;
       continue;
     }
-    console.log(`eval ${ev.id}: ${grading.summary.passed}/${grading.summary.total} expectations passed -> ${path.relative(ROOT, base)}.grading.json`);
-    if (grading.summary.passed < grading.summary.total) failures++;
+    const checksPassed = checks.filter((c) => c.passed).length;
+    const checkNote = checks.length ? `, ${checksPassed}/${checks.length} checks passed` : '';
+    console.log(`eval ${ev.id}: ${grading.summary.passed}/${grading.summary.total} expectations passed${checkNote} -> ${path.relative(ROOT, base)}.grading.json`);
+    if (grading.summary.passed < grading.summary.total || checksPassed < checks.length) failures++;
     } finally {
       // Clean up throwaway workspace to prevent leaking fixture data
       // into world-readable temp directories.
@@ -952,7 +991,7 @@ function main(args = process.argv.slice(2)) {
     if (rawTimeout !== undefined) {
       timeoutMinutes = Number(rawTimeout);
       if (!validTimeout(timeoutMinutes)) {
-        console.error(`--timeout must be a number of minutes greater than 0 and at most ${MAX_TIMEOUT_MIN}`);
+        console.error(`--timeout must be a number of minutes from ${MIN_TIMEOUT_MIN} to ${MAX_TIMEOUT_MIN}`);
         process.exit(1);
       }
     }

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 const test = require('node:test');
 const { materializeWorkspace, isolationBreach, parseGrading, clearGradingSlot, persistGradingOutcome, extractExecutorModel } = require('./run-evals');
 
@@ -80,6 +80,10 @@ function runBehavioralWithGrading(root, raw, options = {}) {
     ...behavioralEval([]), id, kind: 'dialogue', ...(options.evalFields?.[id] || {}),
   }));
   writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  if (options.checksModule) {
+    fs.mkdirSync(path.join(root, 'evals', 'checks'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'evals', 'checks', 'alpha-skill.js'), options.checksModule);
+  }
   const stub = path.join(root, 'stub-claude.cjs');
   fs.writeFileSync(stub, `
     const assert = require('node:assert/strict');
@@ -93,6 +97,7 @@ function runBehavioralWithGrading(root, raw, options = {}) {
         role: executor ? 'executor' : 'grader', model: m === -1 ? null : args[m + 1], timeout: opts.timeout, stdio: opts.stdio,
       }) + '\\n');
       if (executor && ${JSON.stringify(Boolean(options.error))}) throw Object.assign(new Error('executor failed'), ${JSON.stringify(options.error || {})});
+      if (!executor) fs.writeFileSync(${JSON.stringify(path.join(root, 'grader-prompt.txt'))}, String(opts.input));
       if (!executor && ${JSON.stringify(Boolean(options.graderError))}) throw Object.assign(new Error('grader failed'), ${JSON.stringify(options.graderError || {})});
       return executor ? ${JSON.stringify(options.trace ?? '{"type":"result","subtype":"success","is_error":false,"result":"done"}\n')} : ${JSON.stringify(raw)};
     };
@@ -366,7 +371,8 @@ test('dry-run shows the model, timeouts and soak marker', () => {
 for (const [args, message] of [
   [['--model'], /--model needs a value/],
   [['--model', '--soak'], /--model needs a value/],
-  [['--timeout', '0'], /--timeout must be a number of minutes/],
+  [['--timeout', '0'], /--timeout must be a number of minutes from 1 to 60/],
+  [['--timeout', '0.5'], /--timeout must be a number of minutes from 1 to 60/],
   [['--timeout', '61'], /--timeout must be a number of minutes/],
   [['--timeout', 'soon'], /--timeout must be a number of minutes/],
 ]) {
@@ -391,7 +397,7 @@ test('behavioral options are rejected on deterministic runs', () => {
 });
 
 for (const [field, value] of [
-  ['timeout_minutes', 0], ['timeout_minutes', 61], ['timeout_minutes', '5'],
+  ['timeout_minutes', 0], ['timeout_minutes', 0.5], ['timeout_minutes', 61], ['timeout_minutes', '5'],
   ['grader_timeout_minutes', -1], ['soak', 'yes'],
 ]) {
   test(`Tier 2 rejects ${field}=${JSON.stringify(value)}`, () => {
@@ -418,6 +424,422 @@ test('Tier 2 accepts valid timeout and soak fields', () => {
     const result = run(root);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ---------- deterministic checks: runner integration ----------
+
+const ALPHA_CHECKS = `
+  const fs = require('node:fs');
+  module.exports = {
+    'workspace-present': ({ workspace }) => ({ passed: fs.existsSync(workspace), evidence: 'workspace still exists' }),
+    'trace-seen': ({ trace }) => ({ passed: trace.includes('"result":"done"'), evidence: 'saw the trace' }),
+    'always-fails': () => ({ passed: false, evidence: 'nope' }),
+    'throws': () => { throw new Error('boom'); },
+    'no-verdict': () => ({ evidence: 'forgot passed' }),
+    _helper: () => ({ passed: true, evidence: 'helper' }),
+  };
+`;
+const check = (id, name, args) => ({ id, text: `check ${id}`, check: name, ...(args ? { args } : {}) });
+
+test('passing checks run before cleanup and sit beside the grader\'s expectations', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      checksModule: ALPHA_CHECKS,
+      evalFields: { 1: { checks: [check('C1', 'workspace-present'), check('C2', 'trace-seen')] } },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /eval 1: 1\/1 expectations passed, 2\/2 checks passed/);
+    const grading = JSON.parse(fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.grading.json'), 'utf8'));
+    assert.equal(grading.expectations.length, 1);
+    assert.deepEqual(grading.checks.map((c) => [c.id, c.passed]), [['C1', true], ['C2', true]]);
+    assert.equal(grading.summary.passed, 1);
+    assert.equal(grading.summary.total, 1);
+    assert.equal(grading.summary.checks_passed, 2);
+    assert.equal(grading.summary.checks_total, 2);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a failed, throwing or verdict-less check fails the eval even when the grader passes', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      checksModule: ALPHA_CHECKS,
+      evalFields: { 1: { checks: [check('C1', 'workspace-present'), check('C2', 'always-fails'), check('C3', 'throws'), check('C4', 'no-verdict')] } },
+    });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /eval 1: 1\/1 expectations passed, 1\/4 checks passed/);
+    assert.match(result.stdout, /check C2: failed — nope/);
+    const grading = JSON.parse(fs.readFileSync(path.join(root, 'evals/results/alpha-skill.eval-1.grading.json'), 'utf8'));
+    const byId = Object.fromEntries(grading.checks.map((c) => [c.id, c]));
+    assert.equal(byId.C3.passed, false);
+    assert.match(byId.C3.evidence, /^check error: boom/);
+    assert.match(byId.C4.evidence, /^check error: check returned no boolean verdict/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the grader prompt carries the expectations but never the checks', () => {
+  const root = makeSandbox();
+  try {
+    const result = runBehavioralWithGrading(root, passingGrading, {
+      checksModule: ALPHA_CHECKS,
+      evalFields: { 1: { expectations: ['judgment only expectation'], checks: [{ ...check('C1', 'workspace-present'), text: 'mechanical-only check text' }] } },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const prompt = fs.readFileSync(path.join(root, 'grader-prompt.txt'), 'utf8');
+    assert.match(prompt, /1\. judgment only expectation/);
+    assert.doesNotMatch(prompt, /mechanical-only check text/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [name, opts] of [
+  ['invalid grading', { raw: '{}' }],
+  ['a grader failure', { raw: passingGrading, graderError: { code: 'ETIMEDOUT' } }],
+]) {
+  test(`check results are kept in checks.json after ${name}`, () => {
+    const root = makeSandbox();
+    try {
+      const result = runBehavioralWithGrading(root, opts.raw, {
+        checksModule: ALPHA_CHECKS, graderError: opts.graderError,
+        evalFields: { 1: { checks: [check('C1', 'workspace-present')] } },
+      });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      const base = path.join(root, 'evals/results/alpha-skill.eval-1');
+      assert.equal(fs.existsSync(`${base}.grading.json`), false);
+      assert.deepEqual(JSON.parse(fs.readFileSync(`${base}.checks.json`, 'utf8')).checks.map((c) => c.passed), [true]);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+// ---------- deterministic checks: Tier 2 validation ----------
+
+for (const [name, checks, message] of [
+  ['an unknown check name', [check('C1', 'no-such-check')], /check C1 names unknown check "no-such-check"/],
+  ['a helper export', [check('C1', '_helper')], /check C1 names unknown check "_helper"/],
+  ['a duplicate check id', [check('C1', 'workspace-present'), check('C1', 'trace-seen')], /duplicate check id C1/],
+  ['a check without text', [{ id: 'C1', check: 'workspace-present' }], /check C1 needs text/],
+  ['a check without an id', [{ text: 't', check: 'workspace-present' }], /every check needs a string id/],
+  ['non-object args', [{ ...check('C1', 'workspace-present'), args: [1] }], /check C1 args must be an object/],
+  ['a non-array checks field', { id: 'C1' }, /checks must be an array/],
+  ['file-matches without patterns', [check('C1', 'file-matches', { file: 'x.md' })], /check C1 \(file-matches\): args needs patterns or forbid/],
+  ['file-matches with a bad regex', [check('C1', 'file-matches', { file: 'x.md', patterns: ['('] })], /check C1 \(file-matches\): invalid regex/],
+  ['unchanged without paths', [check('C1', 'unchanged', {})], /check C1 \(unchanged\): args.paths must be a non-empty array/],
+  ['final-report-lists with a reversed range', [check('C1', 'final-report-lists', { prefix: 'T', from: 5, to: 1 })], /check C1 \(final-report-lists\): args needs prefix/],
+]) {
+  test(`Tier 2 rejects ${name}`, () => {
+    const root = makeSandbox();
+    writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+    fs.mkdirSync(path.join(root, 'evals', 'checks'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'evals', 'checks', 'alpha-skill.js'), ALPHA_CHECKS);
+    const evalCase = completeCase('alpha-skill', 'change alpha widget');
+    evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue', checks }];
+    writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+    try {
+      const result = run(root);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout, message);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('Tier 2 accepts built-in and skill-module checks', () => {
+  const root = makeSandbox();
+  writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+  fs.mkdirSync(path.join(root, 'evals', 'checks'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'evals', 'checks', 'alpha-skill.js'), ALPHA_CHECKS);
+  const evalCase = completeCase('alpha-skill', 'change alpha widget');
+  evalCase.evals = [{
+    ...behavioralEval([]), kind: 'dialogue', checks: [
+      check('C1', 'workspace-present'),
+      check('C2', 'unchanged', { paths: ['docs/PRD.md'] }),
+      check('C3', 'file-matches', { file: 'docs/x.md', patterns: ['^# '], forbid: ['TODO'], flags: 'mi' }),
+      check('C4', 'final-report-lists', { prefix: 'T', from: 1, to: 15 }),
+    ],
+  }];
+  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  try {
+    const result = run(root);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the repository\'s skill check modules load and export only functions', () => {
+  const dir = path.join(__dirname, '..', 'evals', 'checks');
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+    const mod = require(path.join(dir, file));
+    for (const [name, fn] of Object.entries(mod)) assert.equal(typeof fn, 'function', `${file} exports ${name}`);
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'skills', file.replace(/\.js$/, ''), 'SKILL.md')), `${file} names a real skill`);
+  }
+});
+
+// ---------- deterministic checks: built-ins ----------
+
+const evalChecks = require('./lib/eval-checks');
+
+function tempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-skills-checks-'));
+}
+function write(root, rel, text) {
+  fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+  fs.writeFileSync(path.join(root, rel), text);
+}
+function gitBaseline(root) {
+  const git = (...argv) => execFileSync('git', argv, { cwd: root, stdio: 'pipe' });
+  git('init', '--quiet');
+  git('config', 'user.name', 'Test');
+  git('config', 'user.email', 'test@example.invalid');
+  git('config', 'commit.gpgsign', 'false');
+  git('add', '--all');
+  git('commit', '--quiet', '-m', 'baseline');
+  return git;
+}
+
+for (const [name, mutate, passed, evidence] of [
+  ['untouched sources', () => {}, true, /unchanged since the fixture baseline/],
+  ['an uncommitted edit', (root) => write(root, 'docs/PRD.md', 'edited\n'), false, /docs\/PRD.md changed/],
+  ['a committed edit', (root, git) => { write(root, 'docs/adr/0001.md', 'edited\n'); git('commit', '--quiet', '-am', 'x'); }, false, /docs\/adr\/0001.md changed/],
+  ['a new file under a watched directory', (root) => write(root, 'docs/adr/0002.md', 'new\n'), false, /docs\/adr\/0002.md added/],
+  ['a deleted source', (root) => fs.rmSync(path.join(root, 'CONSTRAINTS.md')), false, /CONSTRAINTS.md changed/],
+  ['a change outside the watched paths', (root) => write(root, 'docs/TEST-PLAN.md', 'new\n'), true, /unchanged/],
+]) {
+  test(`unchanged check: ${name}`, () => {
+    const root = tempDir();
+    try {
+      write(root, 'docs/PRD.md', 'prd\n');
+      write(root, 'docs/adr/0001.md', 'adr\n');
+      write(root, 'CONSTRAINTS.md', 'constraints\n');
+      const git = gitBaseline(root);
+      mutate(root, git);
+      const out = evalChecks.BUILTIN_CHECKS.unchanged({ workspace: root, args: { paths: ['docs/PRD.md', 'docs/adr', 'CONSTRAINTS.md'] } });
+      assert.equal(out.passed, passed, out.evidence);
+      assert.match(out.evidence, evidence);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('unchanged check refuses a path outside the workspace', () => {
+  const root = tempDir();
+  try {
+    write(root, 'a.md', 'a\n');
+    gitBaseline(root);
+    assert.throws(() => evalChecks.BUILTIN_CHECKS.unchanged({ workspace: root, args: { paths: ['../x'] } }), /escapes workspace/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [name, text, args, passed, evidence] of [
+  ['an exact status line', '# Plan\n**Status:** Ready for review\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'] }, true, /matches all 1 pattern/],
+  ['a different status', '**Status:** Draft\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'] }, false, /no match for/],
+  ['a status with extra words', '**Status:** Ready for review (pending)\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'] }, false, /no match for/],
+  ['a forbidden match', '**Status:** Approved\n', { forbid: ['Approved'] }, false, /forbidden match .*"Approved"/],
+  ['case-insensitive headings', '## 2. test strategy\n', { patterns: ['^#+.*Test Strategy'], flags: 'mi' }, true, /matches/],
+]) {
+  test(`file-matches check: ${name}`, () => {
+    const root = tempDir();
+    try {
+      write(root, 'docs/TEST-PLAN.md', text);
+      const out = evalChecks.BUILTIN_CHECKS['file-matches']({ workspace: root, args: { file: 'docs/TEST-PLAN.md', ...args } });
+      assert.equal(out.passed, passed, out.evidence);
+      assert.match(out.evidence, evidence);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('file-matches check fails on a missing file', () => {
+  const root = tempDir();
+  try {
+    const out = evalChecks.BUILTIN_CHECKS['file-matches']({ workspace: root, args: { file: 'docs/TEST-PLAN.md', patterns: ['x'] } });
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, /does not exist/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+const finalReport = (text) => traceOf({ type: 'assistant', message: { content: [] } }, { ...terminal, result: text });
+for (const [name, text, passed, evidence] of [
+  ['a list with one line per ID', ['Checklist:', ...Array.from({ length: 15 }, (_, i) => `- **T${i + 1}** ${i === 4 ? 'fail: BAC-3 has no VC' : 'pass'}`)].join('\n'), true, /T1–T15 each reported/],
+  ['a table with one row per ID', ['| ID | Result |', '|---|---|', ...Array.from({ length: 15 }, (_, i) => `| T${i + 1} | ✅ |`)].join('\n'), true, /each reported/],
+  ['a blanket all-pass', 'Checklist T1–T15: all pass.', false, /T2, T3/],
+  ['a missing ID', Array.from({ length: 15 }, (_, i) => i === 9 ? 'T11 pass' : `T${i + 1}: pass`).join('\n').replace('T11 pass', 'T11: pass'), false, /T10$/],
+  ['an ID without a verdict', Array.from({ length: 15 }, (_, i) => `T${i + 1}: ${i === 0 ? 'see above' : 'pass'}`).join('\n'), false, /for T1$/],
+]) {
+  test(`final-report-lists check: ${name}`, () => {
+    const out = evalChecks.BUILTIN_CHECKS['final-report-lists']({ trace: finalReport(text), args: { prefix: 'T', from: 1, to: 15 } });
+    assert.equal(out.passed, passed, out.evidence);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('final-report-lists check: T1 does not satisfy T10–T15', () => {
+  const text = Array.from({ length: 9 }, (_, i) => `T${i + 1}: pass`).join('\n') + '\nT1 again: pass';
+  const out = evalChecks.BUILTIN_CHECKS['final-report-lists']({ trace: finalReport(text), args: { prefix: 'T', from: 1, to: 15 } });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /T10, T11, T12, T13, T14, T15/);
+});
+
+test('final-report-lists check fails when the trace has no final result', () => {
+  const out = evalChecks.BUILTIN_CHECKS['final-report-lists']({ trace: traceOf(call), args: { prefix: 'T', from: 1, to: 2 } });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /no final result/);
+});
+
+test('markdownTables parses header and rows and strips bold and code markers', () => {
+  const tables = evalChecks.markdownTables('text\n| **VC** | `State` |\n|---|:---:|\n| VC-1 | Covered |\n\n| a |\n| b |\n');
+  assert.equal(tables.length, 1);
+  assert.deepEqual(tables[0].header, ['VC', 'State']);
+  assert.deepEqual(tables[0].rows, [['VC-1', 'Covered']]);
+});
+
+// ---------- deterministic checks: test-plan ----------
+
+const testPlanChecks = require('../evals/checks/test-plan');
+
+const TP_PRD = `# PRD
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-1 | One | Must |
+| FR-2 | Two | Must |
+
+| ID | Linked FR | Criterion |
+|----|-----------|-----------|
+| BAC-1 | FR-1 | First. |
+| BAC-2 | FR-2 | Second. |
+`;
+const tpPlan = ({ vc2State = 'Covered', bac2Row = '| BAC-2 | FR-2 | VC-2 | two | Covered |' } = {}) => `# Test Plan
+**Status:** Ready for review
+
+## 3. Verification Criteria
+| VC | Proves | Criterion (pass/fail) | Level | Method | Doubles | Scenarios / reason | State |
+|----|--------|-----------------------|-------|--------|---------|--------------------|-------|
+| VC-1 | BAC-1 | x | unit | Scenario | none | one | Covered |
+| VC-2 | BAC-2 | x | e2e | Scenario | none | two | ${vc2State} |
+| VC-3 | N-1 | x | unit | Tool check | none | lint rule | Manual |
+
+## 4. Coverage Matrix
+| BAC | FR | VCs | Scenarios | State |
+|-----|----|-----|-----------|-------|
+| BAC-1 | FR-1 | VC-1 | one | Covered |
+${bac2Row}
+`;
+const tpFeature = ({ twoTags = '@FR-2 @BAC-2 @VC-2', step = 'When the account manager opens "Acme"' } = {}) => `@F1
+Feature: F1 Accounts
+  Background:
+    Given the date is 2026-03-02 and the time is 09:00 in "Asia/Kolkata"
+
+  @FR-1 @BAC-1 @VC-1
+  Scenario: one
+    Given an account "Acme" held its QBR on 10/01/2026 and/or later
+    ${step}
+    Then they see "Acme"
+
+  ${twoTags}
+  Scenario Outline: two
+    When the item is <state>
+    Then it shows <state>
+
+    Examples:
+      | state |
+      | open  |
+`;
+
+function tpWorkspace(parts = {}) {
+  const root = tempDir();
+  write(root, 'docs/PRD.md', parts.prd ?? TP_PRD);
+  if (parts.plan !== null) write(root, 'docs/TEST-PLAN.md', parts.plan ?? tpPlan());
+  if (parts.feature !== null) write(root, 'tests/features/f1-accounts.feature', parts.feature ?? tpFeature());
+  return root;
+}
+
+function runTp(name, parts, args = {}) {
+  const root = tpWorkspace(parts);
+  try {
+    return testPlanChecks[name]({ workspace: root, trace: '', args });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+
+test('test-plan checks all pass on a consistent plan and feature set', () => {
+  for (const name of ['coverage-has-all-bacs', 'tags-exist', 'matrix-tags-agree', 'steps-clean']) {
+    const out = runTp(name, {}, name === 'steps-clean' ? { forbidden: ['PostgreSQL', 'Node.js'] } : {});
+    assert.equal(out.passed, true, `${name}: ${out.evidence}`);
+  }
+});
+
+for (const [name, parts, args, evidence] of [
+  ['a BAC missing from the matrix', { plan: tpPlan({ bac2Row: '' }) }, {}, /BAC-2 has no coverage-matrix row/],
+  ['a BAC row with no VC', { plan: tpPlan({ bac2Row: '| BAC-2 | FR-2 | — | — | Pending architecture |' }) }, {}, /BAC-2 lists no VC \(State "Pending architecture"\)/],
+  ['a missing plan', { plan: null }, {}, /TEST-PLAN.md does not exist/],
+]) {
+  test(`coverage-has-all-bacs fails on ${name}`, () => {
+    const out = runTp('coverage-has-all-bacs', parts, args);
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('coverage-has-all-bacs lets an allowed State list no VC', () => {
+  const out = runTp('coverage-has-all-bacs', { plan: tpPlan({ bac2Row: '| BAC-2 | FR-2 | — | — | Blocked (PRD OQ 1) |' }) }, { allowNoVcStates: ['Blocked'] });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, parts, evidence] of [
+  ['a scenario without a VC tag', { feature: tpFeature({ twoTags: '@FR-2 @BAC-2' }) }, /"two" has no @VC- tag/],
+  ['a BAC tag the PRD does not define', { feature: tpFeature({ twoTags: '@FR-2 @BAC-9 @VC-2' }) }, /@BAC-9 is not defined in the PRD/],
+  ['a VC tag the plan does not define', { feature: tpFeature({ twoTags: '@FR-2 @BAC-2 @VC-7' }) }, /@VC-7 is not in the VC table/],
+  ['no feature files', { feature: null }, /no scenarios under tests\/features/],
+]) {
+  test(`tags-exist fails on ${name}`, () => {
+    const out = runTp('tags-exist', parts);
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('tags-exist counts feature-level and Examples tags', () => {
+  const feature = tpFeature({ twoTags: '@BAC-2' }).replace('@F1\n', '@F1 @FR-2\n').replace('    Examples:', '    @VC-2\n    Examples:');
+  const out = runTp('tags-exist', { feature });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, parts, evidence] of [
+  ['a Covered VC no scenario is tagged with', { feature: tpFeature({ twoTags: '@FR-2 @BAC-2 @VC-1' }) }, /VC-2 is Covered but no scenario is tagged @VC-2/],
+  ['a scenario tag whose VC proves another BAC', { feature: tpFeature({ twoTags: '@FR-2 @BAC-2 @VC-1' }) }, /@VC-1 proves BAC-1 but the scenario is tagged @BAC-2/],
+  ['a BAC tag whose matrix row lists none of the scenario\'s VCs', { feature: tpFeature({ twoTags: '@FR-2 @BAC-2 @VC-1' }) }, /@BAC-2 with @VC-1, but matrix row BAC-2 lists VC-2/],
+  ['a scenario tagged with a Blocked VC', { plan: tpPlan({ vc2State: 'Blocked (PRD OQ 1)' }) }, /tagged @VC-2, which is Blocked \(PRD OQ 1\)/],
+  ['a scenario tagged with a BAC missing from the matrix', { plan: tpPlan({ bac2Row: '' }) }, /@BAC-2 has no coverage-matrix row/],
+]) {
+  test(`matrix-tags-agree fails on ${name}`, () => {
+    const out = runTp('matrix-tags-agree', parts);
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+for (const [name, step, evidence] of [
+  ['a URL', 'When they open https://qbr.example/accounts', /URL "https:\/\/"/],
+  ['an HTTP verb', 'When the client sends POST for the account', /HTTP verb "POST"/],
+  ['an endpoint path', 'When the account manager calls /api/accounts', /endpoint path "\/api"/],
+  ['a status code', 'Then the response is status 403', /HTTP status "status 403"/],
+  ['a data attribute selector', 'When they click [data-testid="save"]', /selector/],
+  ['an id selector', 'When they click #save-button', /selector "#save-button"/],
+  ['a forbidden stack name', 'Given the PostgreSQL table has an account', /PostgreSQL "PostgreSQL"/],
+]) {
+  test(`steps-clean fails on ${name}`, () => {
+    const out = runTp('steps-clean', { feature: tpFeature({ step }) }, { forbidden: ['PostgreSQL', 'Node.js'] });
+    assert.equal(out.passed, false);
+    assert.match(out.evidence, evidence);
+  });
+}
+
+test('steps-clean checks data tables and doc strings, not tags or comments', () => {
+  const feature = tpFeature().replace('      | open  |', '      | open  |\n      | https://x.example |');
+  assert.match(runTp('steps-clean', { feature }).evidence, /URL/);
+  const docString = tpFeature({ step: 'When they write:\n      """\n      GET the list\n      """' });
+  assert.match(runTp('steps-clean', { feature: docString }).evidence, /HTTP verb "GET"/);
+  const comment = tpFeature().replace('  Background:', '  # see https://wiki.example/qbr\n  Background:');
+  assert.equal(runTp('steps-clean', { feature: comment }).passed, true);
+});
+
+test('steps-clean does not flag dates, times or a stack name inside another word', () => {
+  const out = runTp('steps-clean', { feature: tpFeature({ step: 'When the node owner opens the account on 2026/03/10 at 09:00' }) }, { forbidden: ['Node.js'] });
+  assert.equal(out.passed, true, out.evidence);
 });
 
 for (const args of [['--eval'], ['--eval', 'not-a-number'], ['--eval', '1.5'], ['--eval', '9007199254740993']]) {
