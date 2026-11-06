@@ -525,6 +525,8 @@ for (const [name, checks, message] of [
   ['a non-array checks field', { id: 'C1' }, /checks must be an array/],
   ['file-matches without patterns', [check('C1', 'file-matches', { file: 'x.md' })], /check C1 \(file-matches\): args needs patterns or forbid/],
   ['file-matches with a bad regex', [check('C1', 'file-matches', { file: 'x.md', patterns: ['('] })], /check C1 \(file-matches\): invalid regex/],
+  ['file-matches with a non-string show', [check('C1', 'file-matches', { file: 'x.md', patterns: ['x'], show: 1 })], /check C1 \(file-matches\): args.show must be a string/],
+  ['file-matches with a bad show regex', [check('C1', 'file-matches', { file: 'x.md', patterns: ['x'], show: '(' })], /check C1 \(file-matches\): invalid regex/],
   ['unchanged without paths', [check('C1', 'unchanged', {})], /check C1 \(unchanged\): args.paths must be a non-empty array/],
   ['final-report-lists with a reversed range', [check('C1', 'final-report-lists', { prefix: 'T', from: 5, to: 1 })], /check C1 \(final-report-lists\): args needs prefix/],
 ]) {
@@ -634,6 +636,10 @@ for (const [name, text, args, passed, evidence] of [
   ['a status with extra words', '**Status:** Ready for review (pending)\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'] }, false, /no match for/],
   ['a forbidden match', '**Status:** Approved\n', { forbid: ['Approved'] }, false, /forbidden match .*"Approved"/],
   ['case-insensitive headings', '## 2. test strategy\n', { patterns: ['^#+.*Test Strategy'], flags: 'mi' }, true, /matches/],
+  ['a different status, with show', '# Plan\n**Status:** Draft\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'], show: '^\\s*\\**Status\\**:' }, false, /no match for .*; found "\*\*Status:\*\* Draft"/],
+  ['a plain status line, with show', 'Status: Approved\n', { patterns: ['^\\*\\*Status:\\*\\* Ready for review\\s*$'], show: '^\\s*\\**Status\\**:' }, false, /found "Status: Approved"/],
+  ['no status line, with show', '# Plan\n', { patterns: ['^\\*\\*Status:\\*\\* Draft\\s*$'], show: '^\\s*\\**Status\\**:' }, false, /no line matches \/\^\\s\*\\\*\*Status\\\*\*:\//],
+  ['a pass, with show', '**Status:** Draft\n', { patterns: ['^\\*\\*Status:\\*\\* Draft\\s*$'], show: '^\\s*\\**Status\\**:' }, true, /^docs\/TEST-PLAN\.md matches all 1 pattern/],
 ]) {
   test(`file-matches check: ${name}`, () => {
     const root = tempDir();
@@ -1056,9 +1062,9 @@ test('integration-pending lets a VC of an unlisted BAC at a non-integration Leve
 });
 
 for (const [name, overrides, evidence] of [
-  ['a Covered integration-level VC', { vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Level integration\)/],
-  ['a listed BAC\'s VC levelled e2e and Covered', { vc4Level: 'e2e', vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Level e2e\)/],
-  ['a listed BAC\'s VC levelled unit and Covered', { vc1State: 'Covered' }, /VC-1 proves BAC-1, which depends on an external system, but has State "Covered" \(Level unit\)/],
+  ['a Covered integration-level VC', { vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Proves "BAC-1", Level "integration", Doubles "provisional"\)/],
+  ['a listed BAC\'s VC levelled e2e and Covered', { vc4Level: 'e2e', vc4State: 'Covered' }, /VC-4 proves BAC-1, which depends on an external system, but has State "Covered" \(Proves "BAC-1", Level "e2e", Doubles "provisional"\)/],
+  ['a listed BAC\'s VC levelled unit and Covered', { vc1State: 'Covered' }, /VC-1 proves BAC-1, which depends on an external system, but has State "Covered" \(Proves "BAC-1", Level "unit", Doubles "provisional"\)/],
 ]) {
   test(`integration-pending fails on ${name}`, () => {
     const out = runTp('integration-pending', pendingBac1(overrides), { bacs: ['BAC-1'] });
@@ -1070,7 +1076,17 @@ for (const [name, overrides, evidence] of [
 test('integration-pending flags a Covered integration-level VC of an unlisted BAC', () => {
   const out = runTp('integration-pending', draft({ vc4State: 'Covered' }), {});
   assert.equal(out.passed, false);
-  assert.match(out.evidence, /VC-4 is integration-level with State "Covered"/);
+  assert.match(out.evidence, /VC-4 is integration-level with State "Covered" \(Proves "BAC-1", Level "integration", Doubles "provisional"\)/);
+});
+
+test('integration-pending reports a non-BAC Proves and a missing Doubles column', () => {
+  const plan = draftPlan().replace('| VC-3 | Non-Negotiable: CRM is the source of account data | x | integration | Scenario | provisional | blocked | Blocked (PRD OQ 3) |',
+    '| VC-3 | Non-Negotiable: CRM is the source of account data | x | integration | Scenario | fake CRM | blocked | Covered |');
+  const out = runTp('integration-pending', { ...draft(), plan }, {});
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /VC-3 is integration-level with State "Covered" \(Proves "Non-Negotiable: CRM is the source of account data", Level "integration", Doubles "fake CRM"\)/);
+  const noDoubles = plan.replace('| Method | Doubles |', '| Method | Fakes |');
+  assert.match(runTp('integration-pending', { ...draft(), plan: noDoubles }, {}).evidence, /VC-3 is integration-level with State "Covered" \(.*Doubles "none"\)/);
 });
 
 test('integration-pending fails when a listed BAC has no VC', () => {

@@ -110,8 +110,16 @@ function unchanged({ workspace, args }) {
     : { passed: true, evidence: `unchanged since the fixture baseline: ${paths.join(', ')}` };
 }
 
-// args: { file, patterns?: [regex], forbid?: [regex], flags?: string }.
-// Passes when the file exists, every pattern matches and no forbid matches.
+// args: { file, patterns?: [regex], forbid?: [regex], flags?: string,
+// show?: regex }. Passes when the file exists, every pattern matches and no
+// forbid matches. On a failure, `show` (matched per line) reports what the
+// file actually has, for example the **Status:** line.
+function shownLines(text, show) {
+  const re = new RegExp(show);
+  const found = String(text).split('\n').filter((line) => re.test(line)).map((line) => `"${line.trim().slice(0, 120)}"`);
+  return found.length ? `found ${summarize(found, 3)}` : `no line matches /${show}/`;
+}
+
 function fileMatches({ workspace, args }) {
   const text = readText(workspace, args.file);
   if (text === null) return { passed: false, evidence: `${args.file} does not exist` };
@@ -124,6 +132,7 @@ function fileMatches({ workspace, args }) {
     const m = text.match(new RegExp(p, flags));
     if (m) problems.push(`forbidden match /${p}/${flags}: "${m[0].trim().slice(0, 120)}"`);
   }
+  if (problems.length && args.show) problems.push(shownLines(text, args.show));
   return problems.length
     ? { passed: false, evidence: `${args.file}: ${summarize(problems)}` }
     : { passed: true, evidence: `${args.file} matches all ${(args.patterns || []).length} pattern(s) and no forbidden one` };
@@ -165,8 +174,10 @@ const BUILTIN_ARGS = {
     if (a.patterns !== undefined && !isStrings(a.patterns)) return 'args.patterns must be an array of strings';
     if (a.forbid !== undefined && !isStrings(a.forbid)) return 'args.forbid must be an array of strings';
     if (!(a.patterns?.length || a.forbid?.length)) return 'args needs patterns or forbid';
+    if (a.show !== undefined && typeof a.show !== 'string') return 'args.show must be a string';
     try {
       for (const p of [...(a.patterns || []), ...(a.forbid || [])]) new RegExp(p, a.flags || 'm');
+      if (a.show !== undefined) new RegExp(a.show);
     } catch (e) { return `invalid regex: ${e.message}`; }
     return null;
   },

@@ -107,7 +107,8 @@
           "check": "file-matches",
           "args": {
             "file": "docs/TEST-PLAN.md",
-            "patterns": ["^\\*\\*Status:\\*\\* Ready for review\\s*$"]
+            "patterns": ["^\\*\\*Status:\\*\\* Ready for review\\s*$"],
+            "show": "^\\s*\\**Status\\**:"
           }
         },
         {
@@ -135,7 +136,7 @@
         "The agent identifies the PRD's Status as In Review before writing, and treats Draft as the highest Status the test plan may have",
         "BAC-7 ('quickly and clearly') gets no invented time threshold or field list; the routed question naming BAC-7 is owned by the PRD approver via the BA",
         "Because there is no docs/ARCHITECTURE.md, test levels and doubles are marked provisional, and NFR VCs are marked Pending architecture",
-        "VCs that depend on a system the PRD names (the CRM, the company directory, email delivery) are not Covered without an architecture, whatever Level they are given (unit, integration or e2e): BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are Pending architecture or Blocked; functional VCs that depend on no external system, such as BAC-2's due-date rule, may be Covered"
+        "VCs that depend on a system the PRD names (the CRM, the company directory, email delivery) are not Covered without an architecture, whatever Level they are given (unit, integration or e2e): BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are Pending architecture or Blocked; functional VCs that depend on no external system, such as BAC-2's due-date rule, may be Covered, and so may access and role VCs (what a signed-in user may see or do) whose scenarios set the user with a signed-in-user stub; only a VC about the sign-in mechanism itself (provider unavailable, session expiry, account disabled in the directory) must wait"
       ],
       "checks": [
         {
@@ -144,7 +145,8 @@
           "check": "file-matches",
           "args": {
             "file": "docs/TEST-PLAN.md",
-            "patterns": ["^\\*\\*Status:\\*\\* Draft\\s*$"]
+            "patterns": ["^\\*\\*Status:\\*\\* Draft\\s*$"],
+            "show": "^\\s*\\**Status\\**:"
           }
         },
         {
@@ -300,7 +302,8 @@
           "check": "file-matches",
           "args": {
             "file": "docs/TEST-PLAN.md",
-            "patterns": ["^\\*\\*Status:\\*\\* Ready for review\\s*$"]
+            "patterns": ["^\\*\\*Status:\\*\\* Ready for review\\s*$"],
+            "show": "^\\s*\\**Status\\**:"
           }
         },
         {
@@ -342,7 +345,8 @@
           "check": "file-matches",
           "args": {
             "file": "docs/TEST-PLAN.md",
-            "patterns": ["^\\*\\*Status:\\*\\* Draft\\s*$"]
+            "patterns": ["^\\*\\*Status:\\*\\* Draft\\s*$"],
+            "show": "^\\s*\\**Status\\**:"
           }
         },
         {

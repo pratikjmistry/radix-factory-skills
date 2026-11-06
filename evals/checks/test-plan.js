@@ -76,6 +76,7 @@ function parsePlan(text) {
       const state = col(t.header, /^state$/i);
       const level = col(t.header, /^level$/i);
       const method = col(t.header, /^method$/i);
+      const doubles = col(t.header, /^doubles$/i);
       for (const row of t.rows) {
         const id = firstId(row[0], 'VC');
         if (!id) continue;
@@ -85,6 +86,7 @@ function parsePlan(text) {
           provesText,
           level: (level === -1 ? '' : row[level] || '').trim(),
           method: (method === -1 ? '' : row[method] || '').trim(),
+          doubles: (doubles === -1 ? '' : row[doubles] || '').trim(),
           state: (state === -1 ? row[row.length - 1] : row[state] || '').trim(),
         });
       }
@@ -373,9 +375,10 @@ function integrationPending({ workspace, args }) {
     if (!byLevel && !listed.length) continue;
     checked += 1;
     if (WAITING.test(vc.state)) continue;
+    const detail = `Proves "${vc.provesText.trim() || 'none'}", Level "${vc.level || 'none'}", Doubles "${vc.doubles || 'none'}"`;
     problems.push(listed.length
-      ? `${id} proves ${listed.join(', ')}, which depends on an external system, but has State "${vc.state}" (Level ${vc.level || 'none'})`
-      : `${id} is integration-level with State "${vc.state}"`);
+      ? `${id} proves ${listed.join(', ')}, which depends on an external system, but has State "${vc.state}" (${detail})`
+      : `${id} is integration-level with State "${vc.state}" (${detail})`);
   }
   for (const bac of bacs) {
     if (![...vcs.values()].some((vc) => vc.proves.includes(bac))) problems.push(`${bac} has no VC`);
