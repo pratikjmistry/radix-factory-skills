@@ -32,11 +32,43 @@ node scripts/run-evals.js --min-rank1 95  # enforce the current routing floor
 node scripts/run-evals.js --behavioral test-driven-development            # spends tokens
 node scripts/run-evals.js --behavioral test-driven-development --dry-run  # prints the plan only
 node scripts/run-evals.js --behavioral test-driven-development --eval 1   # run only case 1
+EVAL_MODEL=sonnet node scripts/run-evals.js --behavioral test-plan --eval 1  # cheap iteration run
+node scripts/run-evals.js --behavioral test-plan --soak                   # include soak evals
 ```
 
 `--eval <id>` selects one behavioral case by its integer `id` (including `0`)
 and also works with `--dry-run`. Unknown or invalid IDs fail before execution;
-omitting the selector runs every case as before.
+omitting the selector runs every case except soak evals.
+
+| Option | Environment | Effect |
+|---|---|---|
+| `--model <m>` | `EVAL_MODEL` | Model for the agent under test. Unset: claude's default model, no `--model` passed. |
+| `--grader-model <m>` | `EVAL_GRADER_MODEL` | Model for the grader. Defaults to the agent's model override. |
+| `--timeout <min>` | — | Overrides the agent's timeout for this run (1–60 minutes). |
+| `--soak` | — | Includes evals marked `"soak": true`. |
+
+A flag wins over its environment variable. The dry run prints the model and timeouts each eval would use. `grading.json` records `run.executor_model` (from the trace) and `run.grader_model`, so you can confirm which models produced a result.
+
+### Cost discipline
+
+Behavioral runs spend real tokens and usage allowance; one full-size execution eval can take over 15 minutes on Opus.
+
+- **Iterate** with a single run of the one eval your change affects (`--eval <id>`), on Sonnet (`EVAL_MODEL=sonnet`). Don't rerun the whole skill to check one fix.
+- **Release gate:** run every gating eval of the changed skills twice on the default model (Opus), and keep both results. Copy the first run's `evals/results/<skill>.eval-<id>.*` files aside before the second, because a rerun clears its eval's result slot.
+- **Soak evals** are full-size versions of gating evals. They are skipped by default, never gate a release, and run only with `--soak` or `--eval <id>`.
+- Keep gating fixtures small: enough requirements to exercise every expectation, not a whole product. A gating eval should finish well inside its `timeout_minutes`.
+
+### Deterministic checks
+
+Expectations that code can decide go in an eval's `checks`, not `expectations`. Examples are a file existing, an exact Status value, tags matching the coverage matrix, no URLs in steps, and sources left unchanged. Checks run after a complete execution, against the project the agent worked in, before the grader. They cost no tokens and never disagree with themselves. The grader sees only `expectations`, the ones that need judgment.
+
+- **Built-in checks** are in `scripts/lib/eval-checks.js`:
+  - `unchanged`: `paths` are identical to the fixture baseline, including committed edits, new files and deletions.
+  - `file-matches`: a `file` matches every `patterns` regex and no `forbid` regex.
+  - `final-report-lists`: the agent's final message reports each ID from `prefix` + `from` to `prefix` + `to` on its own line with pass or fail.
+- **Skill-specific checks** go in `evals/checks/<skill>.js`, exported as `name: ({ workspace, trace, args }) => ({ passed, evidence })`. `workspace` is the eval's fixture directory when it has exactly one, since fixtures land under their own names and the agent works there; otherwise it is the workspace root. Names starting with `_` are helpers, not checks.
+- Tier 2 validates every declared check: shape, unique ids, a name that resolves, and the arguments of built-ins. A typo fails CI, not a paid run.
+- **Results** sit beside the grader's in `grading.json`: a `checks` array, plus `summary.checks_passed` and `summary.checks_total`. The skill-creator `expectations` and `summary` counters are untouched. An eval passes only when every check and every expectation passes. A check that throws, or returns no verdict, counts as failed.
 
 Tier 3 supports two behavioral artifact kinds. `execution` is the default: each eval runs in a throwaway git repository, real project inputs from `files[]` are materialized out of `evals/fixtures/` and committed as the baseline, and the grader judges the full `--output-format stream-json --verbose` execution trace, including tool calls. `dialogue` is reserved for skills whose deliverable is the conversation itself; it needs no fixture, and the grader judges the assistant's conversational turns without requiring file edits or commands. Claiming `dialogue` is a human-reviewed exemption, not a general escape hatch for execution skills.
 
@@ -48,6 +80,17 @@ call. A returned failed probe may still recover before completion. Failed or
 incomplete executions retain `.execution.raw.txt` and `.execution.error.txt`
 beside the case's result slot, produce no score, and do not stop later cases.
 These latest-attempt diagnostics are cleared when that case is rerun.
+
+`.execution.error.txt` opens with a `cause:` line, which the console also prints. The cause comes from, in order:
+
+1. the run's terminal result event, when it carries an API error (for example `429 usage_limit_reached: You've hit your 5-hour limit`);
+2. a timeout, with elapsed time against the limit;
+3. the exit code and the first line of stderr;
+4. the trace check that failed.
+
+The model, elapsed time, exit details, turns and cost follow, then the full stderr. The executor's argv, which embeds the whole skill, is never written. A usage-limit error stops the run, since every later eval would fail the same way. A grader that fails or times out writes `.grading.error.txt` and the run continues with the next eval. When there is no `grading.json`, check results are kept in `.checks.json`.
+
+Timeouts default to 15 minutes for the agent and 5 for the grader. An eval sets its own with `timeout_minutes` and `grader_timeout_minutes` (1–60), and `--timeout` overrides the agent's for one run.
 
 ## Plugin evals (Claude Code)
 
@@ -108,6 +151,12 @@ One file per skill: `evals/cases/<skill-name>.json`.
 ```
 
 - `evals[]` uses skill-creator's core schema (`id`, `prompt`, `expected_output`, optional `files[]`, `expectations[]`) plus this repository's optional `kind`. `kind` must be `execution` or `dialogue` and defaults to `execution` for compatibility. Execution evals require non-empty `files[]`; paths are relative to `evals/fixtures/` and may name a file or project directory. Dialogue evals may omit `files[]` because the transcript is the artifact. Expectations are verifiable statements a grader checks against the relevant artifact — behaviors, not phrasings.
+- Optional per-eval fields, all validated by Tier 2:
+  - `timeout_minutes` and `grader_timeout_minutes`: 1–60, defaulting to 15 and 5.
+  - `soak`: `true` marks a long, optional run that never gates a release.
+  - `checks`: an array of `{ "id", "text", "check", "args" }` deterministic checks (see [Deterministic checks](#deterministic-checks)).
+
+  `evals/cases/test-plan.json` uses all of them. Its gating evals 1 and 2 run on small fixtures, with mechanical expectations as checks; soak evals 4 and 5 keep the full-size fixtures.
 - `trigger` is this repo's extension. `positive` prompts are realistic user asks that should route here (`top_k` defaults to 3; tighten to 1 for a skill's signature ask). `negative` prompts belong to a *different* skill; this skill must not rank first for them. Declare that skill in `owner` where you can: the runner then asserts the owner **outranks** this skill, turning the negative into a real pairwise routing test instead of one that can pass vacuously when the prompt matches nothing.
 
 **Writing good trigger prompts:** paraphrase how users actually talk; don't copy the description (that's gaming the eval). If a realistic prompt can't rank because the description lacks its vocabulary, that is a real finding — improve the description.

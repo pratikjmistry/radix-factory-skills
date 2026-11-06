@@ -72,6 +72,16 @@ Before proposing a change, search the [skill-change rejection ledger](evals/skil
 
 If a skill or description change is rejected based on eval results, add one row to the ledger with the date, affected skill, concise attempted change, before-to-after rank-1 score, and rejected PR link and outcome. Land that ledger-only update separately on the default branch; do not leave it only on the rejected proposal branch, where closing or force-pushing the proposal could discard the record.
 
+## Running Behavioral Evals
+
+Behavioral evals (`node scripts/run-evals.js --behavioral <skill>`) run a real agent and a grader on your account, so they cost tokens and usage allowance. Keep them cheap:
+
+- **While iterating**, run a single pass of the one eval your change affects (`--eval <id>`), on a cheaper model (`EVAL_MODEL=sonnet`).
+- **For a release candidate**, run every gating eval of the changed skills twice on the default model (Opus) and keep both results.
+- **Soak evals** (`"soak": true`) are full-size runs that are skipped by default. Run them when you want extra confidence; they never gate a release.
+
+Flags, timeouts, deterministic checks and how to read a failed run are in [evals/README.md](evals/README.md#running).
+
 ## Adding a Host Guide
 
 The README install section lists only hosts a maintainer has installed and run the current release on. Every other host gets one line in [docs/other-hosts.md](docs/other-hosts.md): the host name and its install command. No dedicated setup page, vendor links, logos, emoji, or screenshots.
