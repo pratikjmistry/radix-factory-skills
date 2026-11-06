@@ -121,8 +121,13 @@ Follow [templates/capability.feature](templates/capability.feature):
 
 - **Tags.** The tags are the traceability, so they must match the coverage matrix:
   - Every scenario carries `@VC-n` for each VC it proves.
-  - A scenario that proves a BAC also carries `@BAC-n` and that BAC's `@FR-n`.
-  - A scenario that proves only a Non-Negotiable NFR or an `N-x` row carries `@VC-n` plus `@NN-<short-name>` (for example `@NN-no-outside-email`) or `@N-x` (for example `@N-2`) instead of a BAC tag. Never add a BAC tag a scenario doesn't prove just to have one.
+  - It also carries one proof tag for each thing it proves:
+    - a BAC: `@BAC-n` and that BAC's `@FR-n`
+    - a Non-Negotiable NFR: `@NN-<short-name>`, for example `@NN-no-outside-email`
+    - a `CONSTRAINTS.md` row: `@N-x`, for example `@N-2`
+    - a PRD §9 NFR: `@NFR-<short-name>`, kebab-case from the NFR's name, for example `@NFR-email-timing`
+    - a PRD §10 edge case: `@EDGE-n`, its number in §10, for example `@EDGE-2`
+  - A scenario that proves several of these carries all their tags. Never add a BAC tag a scenario doesn't prove just to have one.
 - **Domain language only.** Steps use the PRD's words for actors, entities and states. They contain no UI selectors, URLs, endpoints, HTTP verbs, table or class names, or framework names. "Given the member has booked a table for 2026-12-10 at 19:00", not "Given a POST to /api/bookings".
 - **Concrete values.** Use the BAC's example dates, numbers and states. Use `Scenario Outline` with `Examples` when one BAC has several cases (for example, one row per membership level).
 - **Deterministic.** A `Background` fixes the date, time and time zone when time matters. Never write a bare "today". Scenarios don't depend on each other's data.
@@ -180,7 +185,7 @@ Report results by ID.
 - [ ] **T10** Every VC's level and doubles trace to an architecture component or integration, or are marked `provisional`.
 
 **Scenarios**
-- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries a VC tag. A scenario that proves a BAC also carries its BAC and FR tags; one that proves only a Non-Negotiable NFR or an `N-x` carries `@NN-<short-name>` or `@N-x` instead. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
+- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries a VC tag and a proof tag for each thing it proves: `@BAC-n` with its `@FR-n`, `@NN-<short-name>`, `@N-x`, `@NFR-<short-name>` or `@EDGE-n`. No scenario carries a BAC tag it doesn't prove. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
 - [ ] **T12** No step contains implementation detail (selectors, URLs, endpoints, table or class names, technology names). Steps use the PRD's vocabulary and the BACs' example values.
 - [ ] **T13** Scenarios are deterministic: explicit dates, times and time zones, a fixed clock where time matters, no bare "today", and no dependence on another scenario.
 

@@ -855,7 +855,7 @@ test('tags-exist accepts @NN- or @N- in place of @BAC- on a Non-Negotiable scena
 });
 
 for (const [name, tags, parts, evidence] of [
-  ['a scenario with neither a BAC nor an NN/N tag', '@VC-3', {}, /"no outside email" has no @BAC-, @NN- or @N- tag/],
+  ['a scenario with no proof tag', '@VC-3', {}, /"no outside email" has no proof tag \(@BAC-, @NN-, @N-, @NFR- or @EDGE-\)/],
   ['a BAC tag without its FR tag', '@BAC-1 @VC-1', {}, /"no outside email" has a @BAC- tag but no @FR- tag/],
   ['an @N- tag CONSTRAINTS.md does not define', '@N-9 @VC-3', { constraints: '| ID | Rule | Checked by |\n|---|---|---|\n| N-1 | x | lint |\n' }, /@N-9 is not a row in CONSTRAINTS.md/],
 ]) {
@@ -865,6 +865,42 @@ for (const [name, tags, parts, evidence] of [
     assert.match(out.evidence, evidence);
   });
 }
+
+const EDGE_PRD = `${TP_PRD}
+## 10. Edge Cases & Failure Scenarios
+| # | Scenario | Expected Behavior |
+|---|----------|--------------------|
+| 1 | A user has no time zone set | IST is used. |
+| 2 | The CRM cannot be read | The tool keeps working on the last data. |
+
+## 11. Out of Scope
+| # | Item |
+|---|------|
+| 3 | Mobile layouts |
+`;
+
+test('tags-exist accepts @NFR- or @EDGE- alone as a scenario\'s proof tag', () => {
+  for (const tags of ['@NFR-email-timing @VC-3', '@EDGE-2 @VC-3', '@FR-1 @BAC-1 @NFR-email-timing @EDGE-1 @VC-1']) {
+    const out = runTp('tags-exist', { prd: EDGE_PRD, feature: tpFeature() + nnScenario(tags) });
+    assert.equal(out.passed, true, `${tags}: ${out.evidence}`);
+  }
+});
+
+test('tags-exist fails an @EDGE-n beyond the PRD\'s section 10 edge cases', () => {
+  // EDGE-3 is a row number in section 11, not an edge case.
+  const out = runTp('tags-exist', { prd: EDGE_PRD, feature: tpFeature() + nnScenario('@EDGE-3 @VC-3') });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /@EDGE-3 is not an edge case in PRD section 10 \(it numbers 1, 2\)/);
+});
+
+test('tags-exist does not check @EDGE- tags when the PRD has no parseable section 10', () => {
+  assert.equal(runTp('tags-exist', { feature: tpFeature() + nnScenario('@EDGE-9 @VC-3') }).passed, true);
+});
+
+test('matrix-tags-agree treats @NFR- and @EDGE- like @NN-: no BAC-matrix claim', () => {
+  const out = runTp('matrix-tags-agree', { prd: EDGE_PRD, feature: tpFeature() + nnScenario('@NFR-email-timing @EDGE-1 @VC-3') });
+  assert.equal(out.passed, true, out.evidence);
+});
 
 test('tags-exist does not check @N- tags when there is no CONSTRAINTS.md', () => {
   assert.equal(runTp('tags-exist', { feature: tpFeature() + nnScenario('@N-9 @VC-3') }).passed, true);

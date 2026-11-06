@@ -35,6 +35,24 @@ function prdIds(text) {
   return ids;
 }
 
+// The edge-case numbers in the PRD's section 10: the first table after a
+// "## 10." or "Edge Cases" heading, numbered in its first column. Null when
+// no such table is found, so @EDGE- tags go unchecked rather than fail.
+function edgeCaseNumbers(text) {
+  const lines = String(text).split('\n');
+  const start = lines.findIndex((l) => /^#{1,6}\s+(?:10\.?\s|.*\bedge cases?\b)/i.test(l));
+  if (start === -1) return null;
+  const end = lines.findIndex((l, i) => i > start && /^#{1,6}\s/.test(l));
+  const [table] = markdownTables(lines.slice(start + 1, end === -1 ? undefined : end).join('\n'));
+  if (!table) return null;
+  const nums = new Set();
+  for (const row of table.rows) {
+    const m = String(row[0]).trim().match(/^#?\s*0*(\d+)\.?$/);
+    if (m) nums.add(Number(m[1]));
+  }
+  return nums.size ? nums : null;
+}
+
 // N-x rows CONSTRAINTS.md defines: the first cell of a table row.
 function constraintIds(text) {
   const ids = new Set();
@@ -136,13 +154,16 @@ function parseFeatures(workspace, dir) {
       if (section && (STEP.test(t) || t.startsWith('|'))) steps.push({ ...at, text: t });
     });
   }
-  // @NN-<short-name> marks a Non-Negotiable NFR, @N-x a CONSTRAINTS.md row.
+  // Proof tags besides @BAC-: @NN-<short-name> a Non-Negotiable NFR, @N-x a
+  // CONSTRAINTS.md row, @NFR-<short-name> a PRD section 9 NFR, @EDGE-n a PRD
+  // section 10 edge case.
   for (const s of scenarios) {
-    s.ids = { FR: [], BAC: [], VC: [], NN: [], N: [] };
+    s.ids = { FR: [], BAC: [], VC: [], NN: [], N: [], NFR: [], EDGE: [] };
     for (const tag of s.tags) {
-      const m = tag.match(/^@(FR|BAC|VC|N)-0*(\d+)$/);
+      const m = tag.match(/^@(FR|BAC|VC|N|EDGE)-0*(\d+)$/);
+      const named = tag.match(/^@(NN|NFR)-[\w-]+$/);
       if (m) s.ids[m[1]].push(`${m[1]}-${m[2]}`);
-      else if (/^@NN-[\w-]+$/.test(tag)) s.ids.NN.push(tag.slice(1));
+      else if (named) s.ids[named[1]].push(tag.slice(1));
     }
   }
   return { files, scenarios, steps };
@@ -181,12 +202,14 @@ function coverageHasAllBacs({ workspace, args }) {
     : { passed: true, evidence: `all ${bacs.length} PRD BACs are in the coverage matrix with a VC` };
 }
 
-// The skill's tagging rule: every scenario carries a @VC- tag; one that
-// proves a BAC carries @BAC- and @FR-; one that proves only a Non-Negotiable
-// or an N-x row carries @NN-<short-name> or @N-x in place of a BAC tag.
+// The skill's tagging rule: every scenario carries a @VC- tag and at least
+// one proof tag: @BAC- (with @FR-), @NN-, @N-, @NFR- or @EDGE-.
 // Every @FR-/@BAC- tag is defined in the PRD, every @VC- tag is in
-// TEST-PLAN.md's VC table, and every @N-x is a CONSTRAINTS.md row when that
-// file exists. args.require: tag kinds every scenario must carry instead.
+// TEST-PLAN.md's VC table, every @N-x is a CONSTRAINTS.md row when that file
+// exists, and every @EDGE-n is numbered in the PRD's section 10 when that
+// table can be parsed. args.require: tag kinds every scenario must carry
+// instead of the proof-tag rule.
+const PROOF_KINDS = ['BAC', 'NN', 'N', 'NFR', 'EDGE'];
 function tagsExist({ workspace, args }) {
   const prd = loadOrFail(workspace, opt(args, 'prd'));
   const plan = loadOrFail(workspace, opt(args, 'plan'));
@@ -197,6 +220,7 @@ function tagsExist({ workspace, args }) {
   const { vcs } = parsePlan(plan.text);
   const constraints = readText(workspace, opt(args, 'constraints'));
   const nRows = constraints === null ? null : constraintIds(constraints);
+  const edges = edgeCaseNumbers(prd.text);
   const problems = [];
   for (const s of scenarios) {
     const label = `${where(s)} "${s.name}"`;
@@ -205,7 +229,10 @@ function tagsExist({ workspace, args }) {
     } else {
       if (!s.ids.VC.length) problems.push(`${label} has no @VC- tag`);
       if (s.ids.BAC.length && !s.ids.FR.length) problems.push(`${label} has a @BAC- tag but no @FR- tag`);
-      if (!s.ids.BAC.length && !s.ids.NN.length && !s.ids.N.length) problems.push(`${label} has no @BAC-, @NN- or @N- tag`);
+      if (!PROOF_KINDS.some((k) => s.ids[k].length)) problems.push(`${label} has no proof tag (@BAC-, @NN-, @N-, @NFR- or @EDGE-)`);
+    }
+    if (edges) for (const id of s.ids.EDGE) {
+      if (!edges.has(Number(id.split('-')[1]))) problems.push(`${where(s)} @${id} is not an edge case in PRD section 10 (it numbers ${[...edges].join(', ')})`);
     }
     for (const id of [...s.ids.FR, ...s.ids.BAC]) if (!defined.has(id)) problems.push(`${where(s)} @${id} is not defined in the PRD`);
     for (const id of s.ids.VC) if (!vcs.has(id)) problems.push(`${where(s)} @${id} is not in the VC table`);
@@ -219,7 +246,7 @@ function tagsExist({ workspace, args }) {
   }
   return problems.length
     ? { passed: false, evidence: summarize(problems) }
-    : { passed: true, evidence: `${scenarios.length} scenarios carry ${args.require ? args.require.join(', ') : 'VC and BAC/FR or NN/N'} tags, all defined` };
+    : { passed: true, evidence: `${scenarios.length} scenarios carry ${args.require ? args.require.join(', ') : 'a VC tag and a proof tag'}, all defined` };
 }
 
 // The coverage matrix and the feature tags tell the same story:
@@ -229,8 +256,8 @@ function tagsExist({ workspace, args }) {
 // (b) no scenario is tagged with a Blocked or Withdrawn VC;
 // (c) a scenario's @BAC-x is backed by one of its @VC tags in matrix row
 //     BAC-x, and a scenario's @VC-y that proves BACs is tagged with one of them.
-//     A scenario that proves only a Non-Negotiable or N-x carries @NN-/@N-
-//     instead of a BAC tag, so every BAC tag is a matrix claim.
+//     A scenario that proves no BAC carries @NN-, @N-, @NFR- or @EDGE-
+//     instead; those tags make no BAC-matrix claim, and every BAC tag does.
 const NOT_BY_SCENARIO = /\b(tool check|manual|non-functional)\b/i;
 function matrixTagsAgree({ workspace, args }) {
   const plan = loadOrFail(workspace, opt(args, 'plan'));

@@ -77,7 +77,7 @@
         },
         {
           "id": "C3",
-          "text": "Every scenario carries a @VC- tag plus @BAC- and @FR- tags, or @NN-/@N- tags for a scenario that proves only a Non-Negotiable or N-x row, and every tagged ID exists in the PRD, CONSTRAINTS.md or the test plan's VC table",
+          "text": "Every scenario carries a @VC- tag and at least one proof tag (@BAC- with @FR-, @NN-, @N-, @NFR- or @EDGE-), and every tagged ID exists in the PRD (an @EDGE-n numbered in its section 10), CONSTRAINTS.md or the test plan's VC table",
           "check": "tags-exist"
         },
         {
@@ -200,7 +200,7 @@
         },
         {
           "id": "C7",
-          "text": "Unblocked BACs still have tagged scenarios (BAC-2 at least), and every tag names an existing ID",
+          "text": "Unblocked BACs still have tagged scenarios (BAC-2 at least), every scenario carries a @VC- tag and a proof tag (@BAC- with @FR-, @NN-, @N-, @NFR- or @EDGE-), and every tag names an existing ID",
           "check": "tags-exist",
           "args": {
             "mustTag": ["BAC-2"]
@@ -270,7 +270,7 @@
         },
         {
           "id": "C2",
-          "text": "Every scenario carries a @VC- tag plus @BAC- and @FR- tags, or @NN-/@N- tags for a scenario that proves only a Non-Negotiable or N-x row, and every tagged ID exists in the PRD, CONSTRAINTS.md or the test plan's VC table",
+          "text": "Every scenario carries a @VC- tag and at least one proof tag (@BAC- with @FR-, @NN-, @N-, @NFR- or @EDGE-), and every tagged ID exists in the PRD (an @EDGE-n numbered in its section 10), CONSTRAINTS.md or the test plan's VC table",
           "check": "tags-exist"
         },
         {
@@ -377,7 +377,7 @@
         },
         {
           "id": "C4",
-          "text": "Unblocked BACs still have tagged scenarios (BAC-13 at least), and every tag names an existing ID",
+          "text": "Unblocked BACs still have tagged scenarios (BAC-13 at least), every scenario carries a @VC- tag and a proof tag (@BAC- with @FR-, @NN-, @N-, @NFR- or @EDGE-), and every tag names an existing ID",
           "check": "tags-exist",
           "args": {
             "mustTag": ["BAC-13"]
