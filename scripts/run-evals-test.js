@@ -827,6 +827,9 @@ for (const [name, step, evidence] of [
   ['an endpoint path', 'When the account manager calls /api/accounts', /endpoint path "\/api"/],
   ['a status code', 'Then the response is status 403', /HTTP status "status 403"/],
   ['a data attribute selector', 'When they click [data-testid="save"]', /selector/],
+  ['an unquoted data attribute selector', 'When they click [data-testid=save]', /selector "\[data-testid"/],
+  ['a bare data attribute with a value', 'When they click the button with data-testid="save"', /selector "data-testid="/],
+  ['a class-chained data attribute', 'When they click button.data-save', /selector "\.data-save"/],
   ['an id selector', 'When they click #save-button', /selector "#save-button"/],
   ['a forbidden stack name', 'Given the PostgreSQL table has an account', /PostgreSQL "PostgreSQL"/],
 ]) {
@@ -844,6 +847,15 @@ test('steps-clean checks data tables and doc strings, not tags or comments', () 
   assert.match(runTp('steps-clean', { feature: docString }).evidence, /HTTP verb "GET"/);
   const comment = tpFeature().replace('  Background:', '  # see https://wiki.example/qbr\n  Background:');
   assert.equal(runTp('steps-clean', { feature: comment }).passed, true);
+});
+
+test('steps-clean does not flag a hyphenated data- word in a table cell or prose', () => {
+  const feature = tpFeature().replace('      | open  |', '      | open  |\n      | Book data-migration workshop |');
+  assert.ok(feature.includes('| Book data-migration workshop |'), 'fixture row inserted');
+  const out = runTp('steps-clean', { feature });
+  assert.equal(out.passed, true, out.evidence);
+  const prose = runTp('steps-clean', { feature: tpFeature({ step: 'When they book the data-migration workshop.' }) });
+  assert.equal(prose.passed, true, prose.evidence);
 });
 
 test('steps-clean does not flag dates, times or a stack name inside another word', () => {

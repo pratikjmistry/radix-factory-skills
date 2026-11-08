@@ -428,7 +428,10 @@ const IMPLEMENTATION = [
   ['HTTP verb', /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/],
   ['endpoint path', /(?:^|[\s"'`(])\/(?:api|v\d+|[a-z0-9_-]+\/[a-z0-9_{}:.-]+)/i],
   ['HTTP status', /\b(?:status(?: code)?|HTTP)\s+[1-5]\d\d\b/i],
-  ['selector', /\bdata-[a-z][\w-]*|\[[a-z-]+\s*[~|^$*]?=\s*["']|\bxpath\b|\/\/(?:div|span|button|input|a|li|td)\b|#[a-z][\w]*-[\w-]+|(?:^|\s)\.[a-z][\w-]*\s*>|\bcss selector\b/i],
+  // A data-* attribute counts only in selector syntax: after [, # or ., or
+  // followed by ] or = (data-testid="save"). A hyphenated word such as
+  // "data-migration" in prose or a table cell is not a selector.
+  ['selector', /[[#.]\s*data-[a-z][\w-]*|\bdata-[a-z][\w-]*\s*(?:\]|[~|^$*]?=)|\[[a-z-]+\s*[~|^$*]?=\s*["']|\bxpath\b|\/\/(?:div|span|button|input|a|li|td)\b|#[a-z][\w]*-[\w-]+|(?:^|\s)\.[a-z][\w-]*\s*>|\bcss selector\b/i],
 ];
 
 function stepsClean({ workspace, args }) {
