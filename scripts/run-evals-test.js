@@ -2082,6 +2082,39 @@ test('isolationBreach flags skill reads outside the workspace and allows staged 
   }
 });
 
+test('isolationBreach exempts only this workspace\'s own tool-results spill files', () => {
+  const home = os.homedir();
+  const ws = '/var/folders/ab/xyz/T/agent-skills-eval-D2fd4s';
+  const own = `${home}/.claude/projects/-private-var-folders-ab-xyz-T-agent-skills-eval-D2fd4s`;
+  const spill = `${own}/5b1c2d3e-0000-4000-8000-000000000000/tool-results/toolu_01AbCdEf.txt`;
+  const use = (name, input) => traceOf({ type: 'assistant', message: { content: [{ type: 'tool_use', name, id: 'u', input }] } });
+  const allowed = {
+    'Grep on the spill file (reported false positive)': use('Grep', { pattern: 'SKILL.md|name:', path: spill, output_mode: 'content' }),
+    'Read of the spill file': use('Read', { file_path: spill }),
+    'Glob in the tool-results dir': use('Glob', { pattern: '*.txt', path: `${own}/5b1c/tool-results` }),
+    'spill file via ~': use('Read', { file_path: spill.replace(home, '~') }),
+    'spill file under the /var encoding': use('Read', { file_path: `${home}/.claude/projects/-var-folders-ab-xyz-T-agent-skills-eval-D2fd4s/s/tool-results/x.txt` }),
+  };
+  for (const [name, trace] of Object.entries(allowed)) {
+    assert.equal(isolationBreach(trace, ws), null, name);
+    assert.equal(isolationBreach(trace, `/private${ws}`), null, `${name} (/private workspace)`);
+  }
+  const breaches = {
+    'plugin SKILL.md': use('Read', { file_path: `${home}/.claude/plugins/cache/p/1.0.0/skills/a/SKILL.md` }),
+    'grep in plugin cache': use('Grep', { pattern: 'name:', path: `${home}/.claude/plugins/cache/p/1.0.0/skills/a/SKILL.md` }),
+    'home skills dir': use('Glob', { pattern: '**/SKILL.md', path: `${home}/.claude/skills` }),
+    "another workspace's tool-results": use('Grep', { pattern: 'x', path: `${home}/.claude/projects/-private-var-folders-ab-xyz-T-agent-skills-eval-Zz9yQw/s/tool-results/x.txt` }),
+    'another project ending in the same name': use('Read', { file_path: `${home}/.claude/projects/-Users-me-repo-agent-skills-eval-D2fd4s/s/tool-results/x.txt` }),
+    'own project dir, not tool-results': use('Read', { file_path: `${own}/s/memory/SKILL.md` }),
+    'own session transcript': use('Read', { file_path: `${own}/s.jsonl` }),
+    'traversal out of tool-results': use('Read', { file_path: `${own}/s/tool-results/../../../../plugins/cache/p/SKILL.md` }),
+    'spill path through Bash': use('Bash', { command: `grep x ${spill}` }),
+  };
+  for (const [name, trace] of Object.entries(breaches)) {
+    assert.match(isolationBreach(trace, ws) || '', /isolation breach/, name);
+  }
+});
+
 test('an execution that reads installed plugin skills is failed, not graded', () => {
   const root = makeSandbox();
   try {

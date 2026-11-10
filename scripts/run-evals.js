@@ -561,10 +561,22 @@ function isolationBreach(trace, workspace) {
     return abs === ws || abs.startsWith(`${ws}/`);
   };
   const homeClaude = /(^|[\s'"=(])(~|\$HOME|\$\{HOME\})\/\.claude(\/|\b)/;
-  // Claude Code spills oversized tool output to its own session store and the
-  // agent reads it back; that file is this run's output, not an installed skill.
-  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const spillFile = new RegExp(`^${escapeRe(canon(home))}/\\.claude/projects/[^/]*${escapeRe(path.basename(ws))}/[^/]+/tool-results/[^/]+$`);
+  // Claude Code spills oversized tool output to its own session store,
+  // ~/.claude/projects/<encoded cwd>/<session>/tool-results/, and the agent
+  // reads or searches it back; that is this run's output, not an installed
+  // skill. The cwd is encoded with every non-alphanumeric character as '-',
+  // and on macOS it may be the /private/var/... form, so accept exactly this
+  // workspace's encoding in either form and no other project directory.
+  const encode = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
+  const spillRoots = [ws, `/private${ws}`].map((p) => `${canon(home)}/.claude/projects/${encode(p)}/`);
+  const isSpill = (p) => {
+    const abs = canon(path.resolve(ws, p.replace(/^~(?=\/|$)/, home)));
+    return spillRoots.some((root) => {
+      if (!abs.startsWith(root)) return false;
+      const [session, dir] = abs.slice(root.length).split('/');
+      return Boolean(session) && dir === 'tool-results';
+    });
+  };
   for (const line of trace.split('\n')) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
@@ -573,16 +585,18 @@ function isolationBreach(trace, workspace) {
       if (block?.type !== 'tool_use' || !ISOLATION_TOOLS.has(block.name)) continue;
       const input = block.input || {};
       const values = [input.file_path, input.path, input.pattern, input.command].filter((v) => typeof v === 'string');
+      const target = input.file_path || input.path;
+      // Only a tool's path argument is exempt; a Bash command is free text.
+      const spillTarget = block.name !== 'Bash' && typeof target === 'string' && isSpill(target);
       for (const value of values) {
-        if (block.name === 'Read' && spillFile.test(canon(value))) continue;
+        if (spillTarget && value === target) continue;
         if (value.includes('.claude/plugins') || homeClaude.test(value) || canon(value).includes(`${canon(home)}/.claude`)) {
           return `isolation breach: ${block.name} touched an installed-skills location (${value.slice(0, 200)})`;
         }
       }
       // A SKILL.md path the tool names directly, or a search rooted outside the workspace for one.
-      const target = input.file_path || input.path;
       const mentionsSkill = values.some((v) => v.includes('SKILL.md'));
-      if (target && mentionsSkill && !inside(target)) {
+      if (target && mentionsSkill && !spillTarget && !inside(target)) {
         return `isolation breach: ${block.name} read skills outside the workspace (${target})`;
       }
       if (block.name === 'Bash' && typeof input.command === 'string') {
