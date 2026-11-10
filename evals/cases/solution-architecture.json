@@ -69,7 +69,8 @@
         "Every platform limit, quota or SLA stated in ARCHITECTURE.md or an ADR cites a source (document and date checked) or is marked unverified",
         "CLAUDE.md is byte-for-byte unchanged (it already contains the CONSTRAINTS.md pointer line), and no second pointer line is added to it or to a new AGENTS.md",
         "The agent reports the architecture checklist results by item ID (A1 to A16) rather than claiming the architecture is done"
-      ]
+      ],
+      "timeout_minutes": 25
     },
     {
       "id": 2,
