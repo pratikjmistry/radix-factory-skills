@@ -294,6 +294,80 @@ function matrixTagsAgree({ workspace, args }) {
     : { passed: true, evidence: `${vcs.size} VCs and ${scenarios.length} scenarios agree with the coverage matrix` };
 }
 
+// PRD section 8 Non-Negotiable NFRs and section 9 NFRs often have no ID, so
+// their @NN- and @NFR- tags are slugs of their PRD headings (@NN-staff-only,
+// @NFR-email-timing). The plan's two coverage tables for Non-Negotiables and
+// constraints, and for NFRs and edge cases, always carry a Tag column holding
+// each row's tag: the ID-based one where the source has an ID, the slug where
+// it doesn't. Without that column no script can resolve the tags. Checked:
+// - every such table has a Tag column, every row in it has a tag, and no tag
+//   is in two rows across the tables;
+// - every @NN- and @NFR- tag on a scenario is in a Tag column, verbatim;
+// - every @NN- and @NFR- Tag column entry is on at least one scenario, unless
+//   its row's State says no scenario is due yet or none is how it is proved
+//   (Blocked, Pending architecture, Withdrawn, Tool check, Manual,
+//   Non-functional), as in matrix-tags-agree.
+// A table is one of these coverage tables when it has a Tag column, its first
+// column is "Item", or its Source column cites PRD section 8, 9 or 10 or
+// CONSTRAINTS.md.
+const ROW_TAG = /(?<![\w-])@?((?:NN|NFR|N|EDGE)-[A-Za-z0-9][\w-]*)/g;
+const NAMED = /^(NN|NFR)-/;
+const NO_SCENARIO_DUE = /^(blocked|pending architecture|withdrawn|tool check|manual|non-functional)\b/i;
+const SOURCE_CITES = /§\s*(8|9|10)\b|\bsection\s*(8|9|10)\b|constraints\.md/i;
+function tagTables(text) {
+  const tables = [];
+  for (const t of markdownTables(text)) {
+    const tag = col(t.header, /^tags?$/i);
+    const source = col(t.header, /^source$/i);
+    const isCoverage = tag !== -1 || /^item$/i.test((t.header[0] || '').trim())
+      || (source !== -1 && t.rows.some((row) => SOURCE_CITES.test(row[source] || '')));
+    if (isCoverage) tables.push({ header: t.header, rows: t.rows, tag, state: col(t.header, /^state$/i) });
+  }
+  return tables;
+}
+
+function namedTagsAgree({ workspace, args }) {
+  const plan = loadOrFail(workspace, opt(args, 'plan'));
+  if (plan.missing) return { passed: false, evidence: plan.missing };
+  const tables = tagTables(plan.text);
+  if (!tables.length) return { passed: false, evidence: 'TEST-PLAN.md has no Non-Negotiable or NFR coverage table' };
+  const problems = [];
+  const entries = new Map();
+  for (const t of tables) {
+    if (t.tag === -1) {
+      problems.push(`coverage table "${t.header.join(' | ')}" (rows: ${t.rows.map((r) => (r[0] || '').trim()).join(', ')}) has no Tag column`);
+      continue;
+    }
+    for (const row of t.rows) {
+      const item = (row[0] || '').trim();
+      const tags = [...String(row[t.tag] || '').matchAll(ROW_TAG)].map((m) => m[1].replace(/-+$/, ''));
+      if (!tags.length) problems.push(`coverage row "${item}" has no tag in its Tag column`);
+      for (const tag of tags) {
+        const prev = entries.get(tag);
+        if (prev) problems.push(`@${tag} is in two Tag column rows: "${prev.item}" and "${item}"`);
+        else entries.set(tag, { item, state: t.state === -1 ? '' : (row[t.state] || '').trim() });
+      }
+    }
+  }
+  const { scenarios } = parseFeatures(workspace, opt(args, 'dir'));
+  const used = new Map();
+  for (const s of scenarios) for (const tag of [...s.ids.NN, ...s.ids.NFR]) {
+    if (!used.has(tag)) used.set(tag, []);
+    used.get(tag).push(s);
+  }
+  for (const [tag, on] of used) {
+    if (!entries.has(tag)) problems.push(`${where(on[0])} @${tag} is in no Tag column of TEST-PLAN.md${on.length > 1 ? ` (and ${on.length - 1} more scenarios)` : ''}`);
+  }
+  for (const [tag, entry] of entries) {
+    if (NAMED.test(tag) && !used.has(tag) && !NO_SCENARIO_DUE.test(entry.state)) {
+      problems.push(`Tag column entry @${tag} (${entry.item || 'no item'}, State "${entry.state || 'none'}") is on no scenario`);
+    }
+  }
+  return problems.length
+    ? { passed: false, evidence: summarize(problems) }
+    : { passed: true, evidence: `${tables.length} coverage tables with a Tag column; ${entries.size} unique tags agree with the @NN-/@NFR- tags on ${scenarios.length} scenarios` };
+}
+
 // Open-question numbers a State cell cites: "Blocked (PRD OQ 2)",
 // "Blocked (PRD OQ 1, OQ 8)", "Blocked (OQs 1 and 8)" all count.
 function citedOqs(text) {
@@ -454,6 +528,7 @@ module.exports = {
   'coverage-has-all-bacs': coverageHasAllBacs,
   'tags-exist': tagsExist,
   'matrix-tags-agree': matrixTagsAgree,
+  'named-tags-agree': namedTagsAgree,
   'steps-clean': stepsClean,
   'blocked-as-expected': blockedAsExpected,
   'integration-pending': integrationPending,

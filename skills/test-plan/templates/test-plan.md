@@ -47,13 +47,19 @@
 |-----|----|-----|-----------|-------|
 | [BAC-n] | [FR-n] | [VC-n, …] | [`file.feature` › Scenario name, …] | [Covered / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture / Withdrawn] |
 
-### Shared Contract, constraints, NFRs and edge cases
-| Item | Source | VCs | State |
-|------|--------|-----|-------|
-| [Non-Negotiable NFR name] | PRD §8 | [VC-n] | [Covered / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture] |
-| [N-x] | CONSTRAINTS.md | [VC-n] | [State, e.g. Tool check when its *Checked by* tool proves it] |
-| [NFR name] | PRD §9 | [VC-n] | [State] |
-| [Edge case #n] | PRD §10 | [VC-n or scenario] | [State] |
+### Non-Negotiables and constraints
+| Item | Source | Tag | VCs | State |
+|------|--------|-----|-----|-------|
+| [Non-Negotiable NFR name] | PRD §8 | [`@NN-<PRD ID, or kebab-case slug of the PRD heading>`] | [VC-n] | [Covered / Tool check / Manual / Non-functional / Blocked (…) / Pending architecture] |
+| [N-x] | CONSTRAINTS.md | [`@N-x`] | [VC-n] | [State, e.g. Tool check when its *Checked by* tool proves it] |
+
+### NFRs and edge cases
+| Item | Source | Tag | VCs | State |
+|------|--------|-----|-----|-------|
+| [NFR name] | PRD §9 | [`@NFR-<PRD ID, or kebab-case slug of the PRD heading>`] | [VC-n] | [State] |
+| [Edge case #n] | PRD §10 | [`@EDGE-n`] | [VC-n or scenario] | [State] |
+
+Both tables always have the Tag column, and each tag appears in one row only. Feature files use these tags verbatim.
 
 ## 5. Manual and Non-functional Checks
 

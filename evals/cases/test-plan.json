@@ -120,6 +120,11 @@
             "from": 1,
             "to": 15
           }
+        },
+        {
+          "id": "C9",
+          "text": "Both Non-Negotiable and NFR coverage tables have a Tag column with a unique tag on every row, every @NN- and @NFR- tag in tests/features is in a Tag column, and every @NN- and @NFR- Tag column entry is on a scenario unless its row is Blocked, Pending architecture, Withdrawn, Tool check, Manual or Non-functional",
+          "check": "named-tags-agree"
         }
       ]
     },
@@ -127,7 +132,7 @@
       "id": 2,
       "kind": "execution",
       "prompt": "Write the test plan from docs/PRD.md so development can start.",
-      "expected_output": "A Draft test plan: the PRD is In Review with blocking open questions and there is no architecture yet. BAC-11 (named by OQ 1) and BAC-3 and BAC-4 (via FR-3, named by OQ 2) are Blocked citing their question; the VC for the 'CRM is the source of account data' Non-Negotiable is Blocked citing OQ 3; the vague BAC-7 is Blocked (untestable) and routed to the PRD approver via the BA instead of given an invented threshold; integration VCs such as BAC-1's CRM sync stay Pending architecture; unblocked BACs such as BAC-2 still get VCs and scenarios. (Mini fixture; the full-size run is soak eval 5.)",
+      "expected_output": "A Draft test plan: the PRD is In Review with blocking open questions and there is no architecture yet. BAC-11 (named by OQ 1) and BAC-3 and BAC-4 (via FR-3, named by OQ 2) are Blocked citing their question; the VC for the 'CRM is the source of account data' Non-Negotiable is Blocked citing OQ 3; the vague BAC-7 is Blocked (untestable) and routed to the PRD approver via the BA instead of given an invented threshold; integration VCs such as BAC-1's CRM sync stay Pending architecture; unblocked BACs such as BAC-2 still get VCs and scenarios; the Non-Negotiables and NFRs, which have no PRD IDs, get tags derived from their PRD headings in the plan's Tag column, and the feature files use exactly those tags. (Mini fixture; the full-size run is soak eval 5.)",
       "files": [
         "test-plan-in-review"
       ],
@@ -136,7 +141,8 @@
         "The agent identifies the PRD's Status as In Review before writing, and treats Draft as the highest Status the test plan may have",
         "BAC-7 ('quickly and clearly') gets no invented time threshold or field list; the routed question naming BAC-7 is owned by the PRD approver via the BA",
         "Because there is no docs/ARCHITECTURE.md, test levels and doubles are marked provisional, and the NFR VCs whose pass depends on runtime or infrastructure (Speed, Data freshness and Email timing) are marked Pending architecture, never Covered; the Time display NFR is a pure rule checkable with a fixed clock and no external system, so its VC is functional and may be Covered",
-        "VCs that depend on a system the PRD names (the CRM, the company directory, email delivery) are not Covered without an architecture, whatever Level they are given (unit, integration or e2e): BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are Pending architecture or Blocked; functional VCs that depend on no external system, such as BAC-2's due-date rule, may be Covered, and so may access and role VCs (what a signed-in user may see or do) whose scenarios set the user with a signed-in-user stub; only a VC about the sign-in mechanism itself (provider unavailable, session expiry, account disabled in the directory) must wait"
+        "VCs that depend on a system the PRD names (the CRM, the company directory, email delivery) are not Covered without an architecture, whatever Level they are given (unit, integration or e2e): BAC-1's CRM sync and the emails of BAC-5, BAC-8 and BAC-9 are Pending architecture or Blocked; functional VCs that depend on no external system, such as BAC-2's due-date rule, may be Covered, and so may access and role VCs (what a signed-in user may see or do) whose scenarios set the user with a signed-in-user stub; only a VC about the sign-in mechanism itself (provider unavailable, session expiry, account disabled in the directory) must wait",
+        "The PRD's Non-Negotiables and NFRs have no IDs, so TEST-PLAN.md's Non-Negotiable and NFR coverage tables have a Tag column holding a kebab-case tag derived from each PRD heading (for example @NN-no-outside-email, @NFR-email-timing; a shortened slug of the heading is fine), every scenario proving one of them carries exactly that tag, and the plan does not refer to them only by heading"
       ],
       "checks": [
         {
@@ -220,6 +226,11 @@
           "args": {
             "forbidden": ["SQL", "REST", "JSON", "SMTP"]
           }
+        },
+        {
+          "id": "C10",
+          "text": "Both Non-Negotiable and NFR coverage tables have a Tag column with a unique tag on every row, every @NN- and @NFR- tag in tests/features is in a Tag column, and every @NN- and @NFR- Tag column entry is on a scenario unless its row is Blocked, Pending architecture, Withdrawn, Tool check, Manual or Non-functional",
+          "check": "named-tags-agree"
         }
       ]
     },

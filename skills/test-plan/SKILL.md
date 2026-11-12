@@ -123,11 +123,12 @@ Follow [templates/capability.feature](templates/capability.feature):
   - Every scenario carries `@VC-n` for each VC it proves.
   - It also carries one proof tag for each thing it proves:
     - a BAC: `@BAC-n` and that BAC's `@FR-n`
-    - a Non-Negotiable NFR: `@NN-<short-name>`, for example `@NN-no-outside-email`
+    - a Non-Negotiable NFR: `@NN-<ID or slug>`, for example `@NN-no-outside-email`
     - a `CONSTRAINTS.md` row: `@N-x`, for example `@N-2`
-    - a PRD §9 NFR: `@NFR-<short-name>`, kebab-case from the NFR's name, for example `@NFR-email-timing`
+    - a PRD §9 NFR: `@NFR-<ID or slug>`, for example `@NFR-email-timing`
     - a PRD §10 edge case: `@EDGE-n`, its number in §10, for example `@EDGE-2`
   - A scenario that proves several of these carries all their tags. Never add a BAC tag a scenario doesn't prove just to have one.
+  - **Non-Negotiable and NFR tags.** If the PRD gives the item an ID, the tag is that ID: `@NFR-3`. If it has none, derive a kebab-case slug from its PRD heading (lowercase, words joined by hyphens, punctuation dropped): **No outside email.** gives `@NN-no-outside-email`, and **Email timing:** gives `@NFR-email-timing`. Write each tag once, in the **Tag** column of the plan's coverage tables (Step 6), and use exactly that text in every feature file. A tag that isn't in a Tag column can't be traced by any script.
 - **Domain language only.** Steps use the PRD's words for actors, entities and states. They contain no UI selectors, URLs, endpoints, HTTP verbs, table or class names, or framework names. "Given the member has booked a table for 2026-12-10 at 19:00", not "Given a POST to /api/bookings".
 - **Concrete values.** Use the BAC's example dates, numbers and states. Use `Scenario Outline` with `Examples` when one BAC has several cases (for example, one row per membership level).
 - **Deterministic.** A `Background` fixes the date, time and time zone when time matters. Never write a bare "today". Scenarios don't depend on each other's data.
@@ -135,7 +136,7 @@ Follow [templates/capability.feature](templates/capability.feature):
 
 ### Step 6: Write TEST-PLAN.md
 
-Copy [templates/test-plan.md](templates/test-plan.md) to `docs/TEST-PLAN.md` and fill it in. The **coverage matrix** has one row per BAC: its FR, its VCs, its scenarios (feature file and scenario name), and its state. The VC table uses the same states (see Terms). A second table covers the Non-Negotiable NFRs, the `N-x` rows, the NFRs and the edge cases.
+Copy [templates/test-plan.md](templates/test-plan.md) to `docs/TEST-PLAN.md` and fill it in. The **coverage matrix** has one row per BAC: its FR, its VCs, its scenarios (feature file and scenario name), and its state. The VC table uses the same states (see Terms). Two more coverage tables follow: one for the Non-Negotiable NFRs and the `N-x` rows, one for the NFRs and the edge cases. Both always have a **Tag** column, even when every item has a PRD ID. It holds, for each row, the exact tag its scenarios carry: the ID-based tag where the source has an ID (`@NFR-3`, `@N-2`, `@EDGE-1`), and the slug from Step 5 where it doesn't (`@NN-no-outside-email`). Fill it for every row, including rows with no scenario yet. Each tag appears in one row only, across both tables.
 
 **Quality Gates** reference `CONSTRAINTS.md` by row ID rather than restating its numbers, so the two can't drift.
 
@@ -158,11 +159,15 @@ Run every item below against the written files, not against your memory. Fix wha
 3. Report:
    - the PRD and architecture statuses you worked from
    - the counts of BACs, VCs (by method) and scenarios
-   - the checklist result: exactly one line per item, T1 to T15 in order, each in one of two forms. Never a blanket "all pass", and never two items on one line.
+   - the checklist result: exactly one line per item, T1 to T15 in order, each in one of three forms. Never a blanket "all pass", and never two items on one line.
      ```
      T<n>: pass — <evidence>
+     T<n>: pass (by reading, not mechanically checked) — <evidence>
      T<n>: fail — <what is missing>
      ```
+     Use plain `pass` only when you ran a tool for that item (a Grep search, `git diff`) and the evidence names it. An item you verified only by reading the files says so, in the second form. Run the mechanical check wherever one is possible:
+     - **T7 and T11:** use the Grep tool to list the `@` tags in `tests/features/*.feature`, and compare them with the coverage matrix and the Tag columns.
+     - **T8:** if you have a shell, run `git diff -- docs/PRD.md docs/ARCHITECTURE.md docs/adr CONSTRAINTS.md`. If you don't, report `T8: pass (by reading, not mechanically checked)` and ask the human to run that command.
    - every Blocked item, and the routed questions
 4. **Stop.** Never set `Approved`. The test plan's review is the human's gate.
 
@@ -177,7 +182,7 @@ Report results by ID.
 - [ ] **T4** Every Non-Negotiable NFR and every `CONSTRAINTS.md` non-negotiable has at least one VC with an observable pass/fail condition.
 - [ ] **T5** Every NFR has a VC carrying the PRD's measurable target, or an ADR's tighter or decomposed version of it. No VC uses an architecture value looser than the PRD. Such a conflict is resolved by precedence (the PRD wins) and raised as a routed question to the architect.
 - [ ] **T6** Every PRD edge case is covered by a scenario or a VC.
-- [ ] **T7** The coverage matrix agrees with the feature files. Every tagged ID exists, and every scenario the matrix names exists.
+- [ ] **T7** The coverage matrix agrees with the feature files. Every tagged ID exists, and every scenario the matrix names exists. Every `@NN-` and `@NFR-` tag in a feature file appears verbatim in the plan's Tag column, and every `Covered` row's tag is on at least one scenario.
 
 **Source discipline**
 - [ ] **T8** `docs/PRD.md`, `docs/ARCHITECTURE.md`, the ADRs and `CONSTRAINTS.md` are unchanged.
@@ -185,7 +190,7 @@ Report results by ID.
 - [ ] **T10** Every VC's level and doubles trace to an architecture component or integration, or are marked `provisional`.
 
 **Scenarios**
-- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries a VC tag and a proof tag for each thing it proves: `@BAC-n` with its `@FR-n`, `@NN-<short-name>`, `@N-x`, `@NFR-<short-name>` or `@EDGE-n`. No scenario carries a BAC tag it doesn't prove. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
+- [ ] **T11** There is one feature file per capability: a user flow, a cross-cutting Non-Negotiable NFR, or an FR group no flow uses. Every scenario carries a VC tag and a proof tag for each thing it proves: `@BAC-n` with its `@FR-n`, `@NN-<ID or slug>`, `@N-x`, `@NFR-<ID or slug>` or `@EDGE-n`, with `@NN-` and `@NFR-` tags exactly as in the plan's Tag column. No scenario carries a BAC tag it doesn't prove. Every FR that isn't withdrawn or blocked appears in at least one file's tags.
 - [ ] **T12** No step contains implementation detail (selectors, URLs, endpoints, table or class names, technology names). Steps use the PRD's vocabulary and the BACs' example values.
 - [ ] **T13** Scenarios are deterministic: explicit dates, times and time zones, a fixed clock where time matters, no bare "today", and no dependence on another scenario.
 
@@ -206,6 +211,7 @@ Report results by ID.
 | "The open question will probably be answered the obvious way, so I'll write the scenario." | Then the scenario encodes a product decision nobody made. Mark the BAC Blocked and cite the question. |
 | "This constraint is a lint rule, it doesn't need a VC." | Without a VC, nobody checks that the lint rule exists and fails on a violation. Reference its *Checked by* and state the pass/fail condition. |
 | "The matrix says Covered; I'm sure the scenario is there." | Check the tags in the files. The matrix is what reviewers trust. |
+| "I read the tags and they match, so T7 passes." | Reading misses a slug that differs by one word. Grep the feature files' tags and compare them with the matrix and the Tag columns. |
 
 ## Red Flags
 
@@ -221,6 +227,9 @@ Report results by ID.
 - `Blocked (untestable)` on an item whose missing value is stated in an FR or BAC it references
 - A `CONSTRAINTS.md` non-negotiable with no VC
 - A "Covered" matrix row whose scenario tag isn't found in any feature file
+- An `@NN-` or `@NFR-` tag in a feature file that isn't in the plan's Tag column, a coverage table with no Tag column, the same tag in two Tag column rows, or a Non-Negotiable or NFR referred to only by its PRD heading
+- A checklist line reported as plain `pass` when no tool was run for it: T7 or T11 without a Grep of the feature tags, or T8 without `git diff`
+- T8 reported by reading without asking the human to run `git diff`
 - An integration-dependent VC levelled `e2e` or `unit` and marked `Covered` without an architecture
 - A `Tool check` VC marked `Covered`, or a Non-Negotiable scenario carrying a BAC tag it doesn't prove
 
@@ -231,9 +240,10 @@ Before handing off for review, confirm:
 - [ ] Step 1's status gate was applied, and the statuses you worked from are recorded in the header
 - [ ] `docs/TEST-PLAN.md` follows [templates/test-plan.md](templates/test-plan.md)
 - [ ] Every feature file is in `tests/features/` and is listed in the plan's feature index
-- [ ] `git diff docs/PRD.md docs/ARCHITECTURE.md docs/adr CONSTRAINTS.md` is empty
+- [ ] `git diff -- docs/PRD.md docs/ARCHITECTURE.md docs/adr CONSTRAINTS.md` is empty, or, with no shell, T8 is reported by reading and the human is asked to run it
 - [ ] Searching the feature files for `@BAC-` finds every BAC the matrix marks `Covered`
-- [ ] Every checklist item T1–T15 passes against the files, and the result is reported as exactly one line per item, T1 to T15 in order, as `T<n>: pass — <evidence>` or `T<n>: fail — <what is missing>`
+- [ ] A Grep of the feature files for `@NN-` and `@NFR-` finds only tags that are in the plan's Tag columns, and every `Covered` row's tag; no tag appears in two Tag column rows
+- [ ] Every checklist item T1–T15 passes against the files, and the result is reported as exactly one line per item, T1 to T15 in order, as `T<n>: pass — <evidence>`, `T<n>: pass (by reading, not mechanically checked) — <evidence>` or `T<n>: fail — <what is missing>`
 - [ ] Status is no higher than Step 1 allows, and nothing is marked `Approved` by the agent
 
 ## See Also

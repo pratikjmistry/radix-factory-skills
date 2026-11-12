@@ -981,6 +981,68 @@ test('tags-exist mustTag requires a scenario carrying each listed ID', () => {
   assert.match(out.evidence, /no scenario is tagged @BAC-2/);
 });
 
+// A plan with both Non-Negotiable/constraint and NFR/edge-case coverage
+// tables, each with a Tag column: the tags the feature files use verbatim.
+const NN_ROWS = [
+  '| No outside email | PRD §8 | `@NN-no-outside-email` | VC-3 | Covered |',
+  '| CRM is the source of account data | PRD §8 | @NN-crm-is-the-source-of-account-data | — | Blocked (PRD OQ 3) |',
+  '| N-1 | CONSTRAINTS.md | `@N-1` | VC-3 | Tool check |',
+];
+const NFR_ROWS = [
+  '| Email timing | PRD §9 | `@NFR-email-timing` | — | Pending architecture |',
+  '| Edge case #1 | PRD §10 | `@EDGE-1` | VC-3 | Covered |',
+];
+const namedPlan = ({ nn = NN_ROWS, nfr = NFR_ROWS, nfrHeader = '| Item | Source | Tag | VCs | State |\n|------|--------|-----|-----|-------|' } = {}) => `${tpPlan()}
+### Non-Negotiables and constraints
+| Item | Source | Tag | VCs | State |
+|------|--------|-----|-----|-------|
+${nn.join('\n')}
+
+### NFRs and edge cases
+${nfrHeader}
+${nfr.join('\n')}
+`;
+const nnFeature = (tags = '@NN-no-outside-email @VC-3') => tpFeature() + nnScenario(tags);
+
+test('named-tags-agree passes when tags match the Tag columns; Pending architecture, Blocked and Tool check rows need no scenario', () => {
+  const out = runTp('named-tags-agree', { plan: namedPlan(), feature: nnFeature() });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+test('named-tags-agree accepts an NFR whose PRD ID is its tag', () => {
+  const out = runTp('named-tags-agree', { plan: namedPlan({ nfr: ['| NFR-3 Speed | PRD §9 | `@NFR-3` | VC-3 | Covered |'] }), feature: nnFeature('@NN-no-outside-email @NFR-3 @VC-3') });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+for (const [name, parts, evidence] of [
+  // feature file -> plan
+  ['a feature tag in no Tag column', { plan: namedPlan(), feature: nnFeature('@NN-no-outside-email @NN-staff-only @VC-3') }, [/f1-accounts\.feature:\d+ @NN-staff-only is in no Tag column of TEST-PLAN\.md/]],
+  // plan -> feature file
+  ['a Covered Tag entry no scenario carries', { plan: namedPlan({ nfr: ['| Time display | PRD §9 | `@NFR-time-display` | VC-3 | Covered |'] }), feature: nnFeature() }, [/Tag column entry @NFR-time-display \(Time display, State "Covered"\) is on no scenario/]],
+  // both: a slug that differs from the plan's by one word
+  ['a slug that differs from the Tag column', { plan: namedPlan(), feature: nnFeature('@NN-no-external-email @VC-3') }, [/@NN-no-external-email is in no Tag column/, /Tag column entry @NN-no-outside-email \(No outside email, State "Covered"\) is on no scenario/]],
+  // the Tag column is always present
+  ['a coverage table without a Tag column', { plan: namedPlan({ nfrHeader: '| Item | Source | VCs | State |\n|------|--------|-----|-------|', nfr: ['| NFR-3 Speed | PRD §9 | VC-3 | Covered |'] }), feature: nnFeature() }, [/coverage table "Item \| Source \| VCs \| State" \(rows: NFR-3 Speed\) has no Tag column/]],
+  ['a plan with no Tag column at all', { plan: tpPlan().replace(/$/, '\n### Shared Contract\n| Item | Source | VCs | State |\n|------|--------|-----|-------|\n| No outside email | PRD §8 | VC-3 | Covered |\n'), feature: nnFeature() }, [/has no Tag column/, /@NN-no-outside-email is in no Tag column/]],
+  ['a plan with no Non-Negotiable or NFR coverage table', { plan: tpPlan(), feature: nnFeature() }, [/TEST-PLAN\.md has no Non-Negotiable or NFR coverage table/]],
+  ['a coverage row with an empty Tag cell', { plan: namedPlan({ nfr: ['| Speed | PRD §9 | | VC-3 | Non-functional |'] }), feature: nnFeature() }, [/coverage row "Speed" has no tag in its Tag column/]],
+]) {
+  test(`named-tags-agree fails on ${name}`, () => {
+    const out = runTp('named-tags-agree', parts);
+    assert.equal(out.passed, false);
+    for (const re of evidence) assert.match(out.evidence, re);
+  });
+}
+
+test('named-tags-agree fails when a tag is in two Tag column rows, across both tables', () => {
+  const out = runTp('named-tags-agree', { plan: namedPlan({ nfr: [...NFR_ROWS, '| No outside email (sending) | PRD §9 | `@NN-no-outside-email` | VC-3 | Covered |'] }), feature: nnFeature() });
+  assert.equal(out.passed, false);
+  assert.match(out.evidence, /@NN-no-outside-email is in two Tag column rows: "No outside email" and "No outside email \(sending\)"/);
+  // within one table too, and for ID-based tags
+  const sameTable = runTp('named-tags-agree', { plan: namedPlan({ nn: [...NN_ROWS, '| N-1 again | CONSTRAINTS.md | `@N-1` | VC-3 | Tool check |'] }), feature: nnFeature() });
+  assert.match(sameTable.evidence, /@N-1 is in two Tag column rows: "N-1" and "N-1 again"/);
+});
+
 // A Draft plan for an In Review PRD with three BACs and two blocking
 // questions: OQ 1 names BAC-3 directly, OQ 2 names FR-2 (BAC-2), and the
 // "CRM is the source" Non-Negotiable is blocked by OQ 3.
