@@ -1664,6 +1664,176 @@ test('strips -ations as well as -ation so plurals do not out-stem singulars (see
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+// ---------- deterministic checks: ux-design ----------
+
+const uxChecks = require('../evals/checks/ux-design');
+
+const UX_PRD = `# PRD
+**Status:** Approved
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-1 | List free desks | Must |
+| FR-2 | Confirmation email | Must |
+| FR-3 | Old idea | Withdrawn |
+
+| ID | Linked FR | Criterion |
+|----|-----------|-----------|
+| BAC-1 | FR-1 | With every desk booked, the page shows "No desks are free in Leeds on 8 December 2026." |
+| BAC-2 | FR-2 | One email with the subject "Desk booked: L2-14". |
+`;
+const uxDoc = ({ fr2 = '| FR-2 | Email | — | Only output is the email in BAC-2 |', states = 'default, Empty (BAC-1)' } = {}) => `# UX
+**Status:** Ready for review
+
+## 2. FR Classification
+| FR | Class | Screen(s) | Reason |
+|----|-------|-----------|--------|
+| FR-1 | Screen | SCR-1 | Staff pick an office and date and see free desks |
+${fr2}
+
+## 3. Screen Inventory
+| SCR | Screen | FRs | BACs / edge cases | Roles | States | Spec | Status |
+|-----|--------|-----|-------------------|-------|--------|------|--------|
+| SCR-1 | Find a desk | FR-1 | BAC-1 | Staff member | ${states} | screens/scr-01-find-a-desk.md | Ready |
+`;
+const uxDesign = ({ textRatio = '15.80:1', skyResult = 'Fail' } = {}) => `# Design System
+## 3. Contrast
+| Foreground | Background | Ratio | Required | Result | Used for |
+|------------|------------|-------|----------|--------|----------|
+| \`--color-text\` | \`--color-bg\` | ${textRatio} | 4.5 | Pass | Body text |
+| \`--color-sky\` | \`--color-bg\` | 3.62:1 | 4.5 | ${skyResult} | Not used for text |
+| \`--color-sky\` | \`--color-bg\` | 3.6 | 3 | Pass | Focus ring |
+`;
+const UX_TOKENS = `:root {
+  --color-text: #1f2328;
+  --color-bg: #FFFFFF;
+  --color-sky: #2e8bd8;
+  --color-focus: var(--color-sky);
+  --space: 1rem;
+}
+`;
+const uxCss = (extra = '') => `body { color: var(--color-text); background-color: var(--color-bg); padding: var(--space); font-family: system-ui, sans-serif; }
+a:focus { outline: 3px solid var(--color-focus); }
+${extra}
+`;
+const uxPage = ({ state = 'default', body = '<h1>Find a desk</h1>', head = '', banner = '<p><strong>Prototype, not functional.</strong> <a href="index.html">Storyboard</a></p>' } = {}) => `<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><title>${state}</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="prototype.css">${head}</head>
+<body><a class="skip-link" href="#main">Skip to main content</a>
+<div class="prototype-banner">${banner}
+<a href="scr-01-find-a-desk--default.html">default</a> <a href="scr-01-find-a-desk--empty.html">empty</a></div>
+<main id="main">${body}</main></body></html>
+`;
+const UX_EMPTY_BODY = '<h1>Find a desk</h1><p role="status">No desks are free in <strong>Leeds</strong> on 8&nbsp;December 2026.</p><form action="scr-01-find-a-desk--default.html" method="get"><button type="submit">Try another date</button></form>';
+
+function uxWorkspace(parts = {}) {
+  const root = tempDir();
+  const P = 'docs/ux/prototype/';
+  write(root, 'docs/PRD.md', parts.prd ?? UX_PRD);
+  write(root, 'docs/ux/UX.md', parts.ux ?? uxDoc());
+  write(root, 'docs/ux/DESIGN-SYSTEM.md', parts.design ?? uxDesign());
+  write(root, `${P}tokens.css`, parts.tokens ?? UX_TOKENS);
+  write(root, `${P}prototype.css`, parts.css ?? uxCss());
+  write(root, `${P}index.html`, parts.index ?? uxPage({ state: 'storyboard', body: '<h1>Storyboard</h1><ol><li><a href="scr-01-find-a-desk--default.html">Find a desk</a></li></ol>' }));
+  write(root, `${P}scr-01-find-a-desk--default.html`, parts.def ?? uxPage());
+  write(root, `${P}scr-01-find-a-desk--empty.html`, parts.empty ?? uxPage({ state: 'empty', body: UX_EMPTY_BODY }));
+  for (const [rel, text] of Object.entries(parts.extra || {})) write(root, rel, text);
+  return root;
+}
+function runUx(name, parts, args = {}) {
+  const root = uxWorkspace(parts);
+  try {
+    return uxChecks[name]({ workspace: root, trace: '', args });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+
+test('ux-design contrast helpers follow WCAG 2.1', () => {
+  const ratio = (a, b) => uxChecks._contrastRatio(uxChecks._parseColour(a), uxChecks._parseColour(b));
+  assert.equal(ratio('#000000', '#ffffff').toFixed(2), '21.00');
+  assert.equal(ratio('#2E8BD8', '#fff').toFixed(2), '3.62');
+  assert.equal(ratio('rgb(31, 35, 40)', 'white').toFixed(2), '15.80');
+  assert.equal(uxChecks._resolveToken(uxChecks._parseTokens(UX_TOKENS), '--color-focus'), '#2e8bd8');
+  assert.equal(uxChecks._stateSlug('Permission denied (BAC-10)'), 'permission-denied');
+  assert.deepEqual(uxChecks._quotedCopy('shows "Booking cancelled." and “Keep booking”'), ['Booking cancelled.', 'Keep booking']);
+});
+
+test('ux-design checks all pass on a consistent design and prototype', () => {
+  for (const [name, args] of [
+    ['contrast-recomputed', { failingColour: '#2E8BD8' }],
+    ['links-resolve', {}],
+    ['no-script-or-remote', {}],
+    ['tokens-defined', {}],
+    ['frs-classified', { expect: { 'FR-2': { is: ['Email'] }, 'FR-1': { includes: ['Screen'] } } }],
+    ['page-per-state', {}],
+    ['bac-copy-verbatim', {}],
+  ]) {
+    const out = runUx(name, {}, args);
+    assert.equal(out.passed, true, `${name}: ${out.evidence}`);
+  }
+});
+
+for (const [check, label, parts, args, evidence] of [
+  ['contrast-recomputed', 'a ratio that tokens.css does not give', { design: uxDesign({ textRatio: '12.10:1' }) }, {}, /table says 12\.10, tokens\.css gives 15\.80/],
+  ['contrast-recomputed', 'a failing pair marked pass', { design: uxDesign({ skyResult: 'Pass' }) }, {}, /3\.62 is below 4\.5 but the table says pass/],
+  ['contrast-recomputed', 'a CSS colour pair with no passing row', { css: uxCss('.btn { color: var(--color-bg); background: var(--color-sky); }') }, {}, /sets --color-bg on --color-sky, which has no passing contrast-table row/],
+  ['contrast-recomputed', 'the failing brand colour used as text', { css: uxCss('a { color: var(--color-sky); }') }, { failingColour: '#2e8bd8' }, /uses --color-sky \(#2e8bd8, fails 4\.5:1\) as text colour/],
+  ['contrast-recomputed', 'a missing contrast table', { design: '# Design System\n' }, {}, /no contrast table/],
+  ['links-resolve', 'a dead link', { def: uxPage({ body: '<a href="scr-02-nowhere--default.html">x</a>' }) }, {}, /scr-02-nowhere--default\.html does not exist/],
+  ['links-resolve', 'a fragment with no id', { def: uxPage({ body: '<a href="scr-01-find-a-desk--empty.html#results">x</a>' }) }, {}, /names no id "results"/],
+  ['links-resolve', 'a remote link', { def: uxPage({ body: '<a href="https://example.com/">x</a>' }) }, {}, /is not a relative link/],
+  ['links-resolve', 'a missing index.html', { index: '' , extra: {} }, {}, null],
+  ['no-script-or-remote', 'a script element', { def: uxPage({ head: '<script>alert(1)</script>' }) }, {}, /<script>/],
+  ['no-script-or-remote', 'an inline event handler', { def: uxPage({ body: '<button onclick="go()">Go</button>' }) }, {}, /inline event handler/],
+  ['no-script-or-remote', 'a web font URL', { css: uxCss('@import url("https://fonts.example.com/css");') }, {}, /remote URL https:\/\/fonts\.example\.com/],
+  ['tokens-defined', 'an undefined var()', { css: uxCss('p { margin: var(--space-9); }') }, {}, /var\(--space-9\) is not defined in tokens\.css/],
+  ['tokens-defined', 'a raw hex colour in prototype.css', { css: uxCss('p { border: 1px solid #ccc; }') }, {}, /raw colour #ccc in "border"/],
+  ['tokens-defined', 'a named colour in a style attribute', { def: uxPage({ body: '<p style="color: red">x</p>' }) }, {}, /raw colour red in "color"/],
+  ['tokens-defined', 'a custom property defined outside tokens.css', { css: uxCss(':root { --color-extra: var(--color-text); }') }, {}, /defines --color-extra outside tokens\.css/],
+  ['frs-classified', 'an FR with no row', { ux: uxDoc({ fr2: '' }) }, {}, /FR-2 has no classification row/],
+  ['frs-classified', 'a Screen FR naming an unknown screen', { ux: uxDoc({ fr2: '| FR-2 | Screen + Email | SCR-4 | A confirmation page too |' }) }, {}, /FR-2 names SCR-4, which is not in the screen inventory/],
+  ['frs-classified', 'an unexpected class', { ux: uxDoc({ fr2: '| FR-2 | Screen + Email | SCR-1 | A confirmation page too |' }) }, { expect: { 'FR-2': { is: ['Email'] } } }, /FR-2 should be Email only, is Screen \+ Email/],
+  ['frs-classified', 'a class with no reason', { ux: uxDoc({ fr2: '| FR-2 | Email | — | — |' }) }, {}, /FR-2 gives no reason/],
+  ['page-per-state', 'a state with no page', { ux: uxDoc({ states: 'default, empty, permission-denied' }) }, {}, /SCR-1 state "permission-denied" has no page/],
+  ['page-per-state', 'a page for an unlisted state', { extra: { 'docs/ux/prototype/scr-01-find-a-desk--error.html': uxPage({ state: 'error' }) } }, {}, /state "error" is not listed for SCR-1/],
+  ['page-per-state', 'a page without the banner', { def: uxPage({ banner: '<p>Prototype</p>' }) }, {}, /scr-01-find-a-desk--default\.html has no "Prototype, not functional" banner/],
+  ['page-per-state', 'a badly named page', { extra: { 'docs/ux/prototype/find-a-desk.html': uxPage() } }, {}, /find-a-desk\.html is not named scr-NN-<slug>--<state>\.html/],
+  ['bac-copy-verbatim', 'paraphrased copy', { empty: uxPage({ state: 'empty', body: '<p>No desks free in Leeds on 8 December 2026.</p>' }) }, {}, /BAC-1: "No desks are free in Leeds on 8 December 2026\." is not on any page of SCR-1/],
+  ['bac-copy-verbatim', 'lorem ipsum', { def: uxPage({ body: '<p>Lorem ipsum dolor</p>' }) }, {}, /has lorem ipsum/],
+]) {
+  test(`${check} fails on ${label}`, () => {
+    const root = uxWorkspace(parts);
+    if (label === 'a missing index.html') fs.rmSync(path.join(root, 'docs/ux/prototype/index.html'));
+    try {
+      const out = uxChecks[check]({ workspace: root, trace: '', args });
+      assert.equal(out.passed, false, out.evidence);
+      assert.match(out.evidence, evidence || /index\.html does not exist/);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+test('no-script-or-remote allows the SVG namespace and skips the brand folder', () => {
+  const out = runUx('no-script-or-remote', { extra: {
+    'docs/ux/prototype/icon.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>',
+    'docs/ux/brand/logo.svg': '<svg><a href="https://larkspur.example/">x</a></svg>',
+  } });
+  assert.equal(out.passed, true, out.evidence);
+});
+
+test('page-per-state skips Blocked screens and bac-copy-verbatim skips non-Screen FRs', () => {
+  const ux = uxDoc({ states: 'default, empty' }).replace('| Ready |', '| Blocked (PRD OQ 1) |');
+  const out = runUx('page-per-state', { ux });
+  assert.equal(out.passed, true, out.evidence);
+  const copy = runUx('bac-copy-verbatim', {});
+  assert.match(copy.evidence, /1 BAC\(s\) with quotes on non-Screen FRs skipped/);
+});
+
+test('the ux-design eval case declares only checks that resolve', () => {
+  const kase = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'evals', 'cases', 'ux-design.json'), 'utf8'));
+  for (const ev of kase.evals) {
+    assert.deepEqual(evalChecks.validateChecks(ev.checks, 'ux-design', path.join(__dirname, '..', 'evals', 'checks')), []);
+  }
+});
+
 // ---------- parseGrading expectation-binding tests ----------
 
 test('accepts reordered-but-complete grader results', () => {

@@ -35,7 +35,7 @@ Every Non-Negotiable NFR from the PRD's Shared Contract, and how it is held.
 ## 3. Technology Stack
 | Layer | Technology | Version / Constraint | Decided in |
 |-------|------------|----------------------|------------|
-| Frontend | [Technology] | [Version/constraint] | [ADR-NNNN] |
+| Frontend | [Technology, or "None (no user interface)" when the product has no user interface] | [Version/constraint] | [ADR-NNNN] |
 | Backend | [Technology] | [Version/constraint] | [ADR-NNNN] |
 | Database | [Technology] | [Version/constraint] | [ADR-NNNN] |
 | Data access | [Technology] | [Version/constraint] | [ADR-NNNN] |

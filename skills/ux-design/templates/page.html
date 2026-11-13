@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  One page per screen state: scr-NN-<slug>--<state>.html in docs/ux/prototype/.
+  Static HTML only: no <script>, no on…= handlers, no http(s):// URLs, no
+  style="" attributes. Every link is relative and resolves. Forms move to the
+  next state's page with method="get"; nothing is sent anywhere.
+  The skip link, the prototype banner and the state links are review aids and
+  are not in the screen's element table. Everything inside <header>, <main>
+  and <footer> is the design and uses the element table's roles, accessible
+  names and exact text.
+-->
+<html lang="[language from the PRD, e.g. en-GB]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>[Screen name]: [state] — [Product] (prototype)</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <div class="prototype-banner">
+    <p><strong>Prototype, not functional.</strong> SCR-[NN] [Screen name], state: [state]. <a href="index.html">Back to the storyboard</a></p>
+    <p>States of this screen:
+      <a href="scr-[NN]-[slug]--default.html" aria-current="page">default</a> ·
+      <a href="scr-[NN]-[slug]--empty.html">empty</a>
+    </p>
+  </div>
+
+  <header class="site-header">
+    <p class="site-name"><a href="scr-[NN]-[slug]--default.html">[Product]</a></p>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="scr-[NN]-[slug]--default.html" aria-current="page">[Navigation item]</a></li>
+        <li><a href="scr-[NN]-[other-slug]--default.html">[Navigation item]</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+    <h1>[Page heading, exactly as in the element table]</h1>
+
+    <!-- An outcome message, verbatim from its BAC -->
+    <p role="status">[Quoted copy from BAC-n, character for character]</p>
+
+    <!-- A form moves to the next state's page -->
+    <form action="scr-[NN]-[slug]--[next-state].html" method="get">
+      <label for="[field-id]">[Label]</label>
+      <input id="[field-id]" name="[field-id]" type="text" value="[Example value from the PRD]">
+      <button type="submit">[Button text]</button>
+    </form>
+
+    <!-- Data from the PRD's examples, never lorem ipsum -->
+    <table>
+      <caption>[What the table lists]</caption>
+      <thead><tr><th scope="col">[Column]</th><th scope="col">[Column]</th></tr></thead>
+      <tbody><tr><td>[Example]</td><td>[Example]</td></tr></tbody>
+    </table>
+  </main>
+
+  <footer class="site-footer">
+    <p>[Footer text, if the design has one]</p>
+  </footer>
+</body>
+</html>

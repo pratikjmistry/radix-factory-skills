@@ -2,6 +2,23 @@
 
 Earlier releases are described in their git tag messages (`git tag -n99 <version>`).
 
+## 0.10.0 — 2026-11-13
+
+### ux-design (new)
+
+- New skill for the ux-designer agent. From an `In Review` or `Approved` PRD and the architecture's Frontend row, it classifies every FR (`Screen`, `Email`, `Background`, `Non-UI`, with a reason) and writes, under `docs/ux/` only: `UX.md` (FR classification, screen inventory `SCR-n`, navigation, a storyboard per flow, emails and background behaviour, Open Questions with a Blocks column), `DESIGN-SYSTEM.md` (stack target, token roles, a contrast table recomputed from `tokens.css`, accessibility baseline with the enforcement level copied from `CONSTRAINTS.md`, breakpoints from the PRD's device NFR, components, patterns), `screens/scr-NN-<slug>.md` with element tables (role, accessible name, exact text), and a static HTML/CSS prototype (`prototype/index.html` storyboard, `tokens.css`, `prototype.css`, one `scr-NN-<slug>--<state>.html` page per screen state, no script, no remote URLs, a "Prototype, not functional" banner on every page).
+- Status gate: a `Draft` or missing PRD is refused and routed to the BA; no Frontend decision gives `BLOCKED: front-end stack not decided`; Frontend `None (no user interface)` gives `BLOCKED: no user interface`. `Ready for review` needs an `Approved` PRD and the architecture at `Ready for design review` or later; never `Approved`. Checklist U1–U15, reported one line each in the same three forms as test-plan.
+- Templates: `ux.md`, `design-system.md`, `screen.md`, `tokens.css`, `page.html`, `index.html`.
+
+### solution-architecture
+
+- The architecture template's Frontend row reads `None (no user interface)` for a product with no user interface, which ux-design reads as `BLOCKED: no user interface`.
+
+### Evals
+
+- `evals/cases/ux-design.json`: trigger cases (negatives route an accessible modal to frontend-ui-engineering, choosing the stack to solution-architecture, refining an idea to idea-refine); gating eval 1 on the new `ux-larkspur` fixture (Approved desk-booking PRD with 3 flows, 9 FRs including an email-only FR and an admin FR no flow uses, 11 BACs with quoted copy, an empty and a permission-denied state, a flow step with no FR; server-rendered architecture at `Ready for design review`; accessibility measured, not enforced; a brand colour that fails 4.5:1 on white); gating eval 2 on `ux-larkspur-draft-prd` (Draft PRD refusal, nothing written under `docs/ux/`).
+- New deterministic checks in `evals/checks/ux-design.js`, with unit tests in `scripts/run-evals-test.js`: `contrast-recomputed`, `tokens-defined`, `frs-classified`, `page-per-state`, `links-resolve`, `no-script-or-remote`, `bac-copy-verbatim`.
+
 ## 0.9.1 — 2026-11-12
 
 ### test-plan

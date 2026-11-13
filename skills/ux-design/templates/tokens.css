@@ -1,0 +1,59 @@
+/*
+ * Design tokens: the only file in docs/ux/ that holds a design value.
+ * prototype.css and the pages use var(--name) only.
+ *
+ * The values below are neutral defaults, every text pair at or above 4.5:1.
+ * Replace them with the brand's values from docs/ux/brand/, then recompute
+ * every row of DESIGN-SYSTEM.md's contrast table. Name tokens by role, not
+ * by hue. A brand colour that fails a use gets its own token, used only
+ * where its ratio meets that use's minimum, or not at all.
+ */
+:root {
+  /* Colour: surfaces */
+  --color-bg: #f6f8fa;
+  --color-surface: #ffffff;
+  --color-border: #8c959f;
+
+  /* Colour: text */
+  --color-text: #1f2328;
+  --color-text-muted: #57606a;
+  --color-link: #0b5cad;
+  --color-heading: #1f2328;
+
+  /* Colour: actions */
+  --color-primary: #1f4fa3;
+  --color-on-primary: #ffffff;
+
+  /* Colour: feedback */
+  --color-success-text: #1a7f37;
+  --color-danger-text: #b42318;
+  --color-focus: #0b5cad;
+
+  /* Prototype chrome (banner and state links; not part of the design) */
+  --color-proto-bg: #fff8c5;
+  --color-proto-text: #1f2328;
+
+  /* Type */
+  --font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-size-body: 1rem;
+  --font-size-small: 0.875rem;
+  --font-size-h1: 1.75rem;
+  --font-size-h2: 1.375rem;
+  --line-height-body: 1.5;
+  --font-weight-bold: 600;
+
+  /* Space */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+
+  /* Shape and focus */
+  --radius: 4px;
+  --border-width: 1px;
+  --focus-width: 3px;
+
+  /* Layout */
+  --content-max-width: 72rem;
+}

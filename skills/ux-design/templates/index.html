@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  The storyboard: docs/ux/prototype/index.html. Each PRD flow as an ordered
+  list, one item per step in the PRD's order, linking the page that shows it.
+  A step with no FR stays in the list as "Not designed" with its question.
+  Then the screens no flow uses, then every screen with all its states.
+  Same rules as every page: no script, no remote URLs, relative links only.
+-->
+<html lang="[language from the PRD, e.g. en-GB]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storyboard — [Product] (prototype)</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <div class="prototype-banner">
+    <p><strong>Prototype, not functional.</strong> Static pages for the design review: links and buttons move between pages, nothing is saved or sent.</p>
+  </div>
+
+  <main id="main">
+    <h1>[Product]: storyboard</h1>
+    <p>Design status: [Draft | Ready for review]. Specs and open questions: <a href="../UX.md">UX.md</a>, <a href="../DESIGN-SYSTEM.md">DESIGN-SYSTEM.md</a>.</p>
+
+    <section aria-labelledby="flow-f1">
+      <h2 id="flow-f1">Flow [F1]: [Flow name, as in the PRD]</h2>
+      <ol>
+        <li><a href="scr-[NN]-[slug]--default.html">[Step 1 text]</a> (SCR-[NN], [FR-n])</li>
+        <li>[Step 2 text]: not designed, no FR (open question [n] in <a href="../UX.md">UX.md</a>)</li>
+        <li><a href="scr-[NN]-[slug]--[state].html">[Step 3 text]</a> (SCR-[NN], [FR-n])</li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="no-flow">
+      <h2 id="no-flow">Screens no flow uses</h2>
+      <ul>
+        <li><a href="scr-[NN]-[slug]--default.html">SCR-[NN] [Screen name]</a> ([FR-n]; reached from [where])</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="all-screens">
+      <h2 id="all-screens">All screens and states</h2>
+      <table>
+        <caption>Every screen state has one page</caption>
+        <thead><tr><th scope="col">Screen</th><th scope="col">States</th></tr></thead>
+        <tbody>
+          <tr>
+            <th scope="row">SCR-[NN] [Screen name]</th>
+            <td><a href="scr-[NN]-[slug]--default.html">default</a>, <a href="scr-[NN]-[slug]--empty.html">empty</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,161 @@
+{
+  "skill_name": "ux-design",
+  "trigger": {
+    "positive": [
+      {
+        "prompt": "The PRD is approved and the architecture is ready; design the screens and a clickable prototype for the design review",
+        "top_k": 1
+      },
+      {
+        "prompt": "Turn the user flows in our PRD into a storyboard and wireframes",
+        "top_k": 3
+      },
+      {
+        "prompt": "Which of our functional requirements need a screen, and which are only an email or a background job?",
+        "top_k": 3
+      },
+      {
+        "prompt": "Set up the design system for the new app, with tokens and a colour contrast table, before UI development starts",
+        "top_k": 3
+      }
+    ],
+    "negative": [
+      {
+        "prompt": "Make this modal accessible: trap focus inside it and close it with Escape",
+        "owner": "frontend-ui-engineering"
+      },
+      {
+        "prompt": "Choose the stack for the new booking app: the front-end framework, the backend and the database",
+        "owner": "solution-architecture"
+      },
+      {
+        "prompt": "Refine this idea for a desk-booking app before we write anything down",
+        "owner": "idea-refine"
+      }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "kind": "execution",
+      "prompt": "Design the UX for docs/PRD.md: the design system, the screens and a clickable prototype for the design review. Nobody is available to answer questions right now.",
+      "expected_output": "docs/ux/UX.md (Status exactly Ready for review) with every FR classified, a screen inventory, a storyboard for flows F1–F3 and open questions; docs/ux/DESIGN-SYSTEM.md with a contrast table recomputed from tokens.css; one spec per screen in docs/ux/screens/; and a static HTML/CSS prototype in docs/ux/prototype/ with one page per screen state, the banner on every page, no script and no remote URL. FR-3 (confirmation email) is Email with no screen; FR-8 (desk management, no flow) is a Screen reached outside the storyboard with a permission-denied state; F1 step 2 (narrow to one floor) has no FR and is an open question, not a filter control; Larkspur Sky (#2E8BD8, 3.62:1 on white) is not used for text and is raised as a question; the accessibility enforcement level is copied from CONSTRAINTS.md M-1 (measured, not yet enforced); BAC quoted copy verbatim; no source changed; U1–U15 reported.",
+      "files": [
+        "ux-larkspur"
+      ],
+      "timeout_minutes": 25,
+      "grader_timeout_minutes": 10,
+      "expectations": [
+        "F1 step 2 ('They narrow the list to one floor') is not designed: no floor filter or floor selector control appears on any prototype page or in any element table, the storyboard shows the step as not designed, and UX.md's open questions contain a row about it owned by the PRD approver via the BA",
+        "FR-8 (office managers add and remove desks), which no flow uses, has a screen with a permission-denied state for a staff member who is not an office manager, showing 'You need office manager access to manage desks.' with no add or remove controls; index.html or the storyboard lists it as a screen no flow uses and links to it",
+        "Larkspur Sky (#2E8BD8) is not used as a text colour or as the background behind text; links and secondary buttons use a colour that passes 4.5:1; the contrast table records Sky's failing ratio against white (about 3.6:1) or DESIGN-SYSTEM.md's brand section explains why Sky isn't used for text; and an open question about it is raised for the brand contact (Ines Calder, Marketing) or the PRD approver via the BA",
+        "DESIGN-SYSTEM.md states WCAG 2.1 AA as the design intent and copies the enforcement level from CONSTRAINTS.md M-1 (measured, not yet enforced; report only), citing M-1; it never says accessibility is enforced or fails the build",
+        "The design maps components to the architecture's stack (server-rendered Django templates, plain CSS) and adds no component library, CSS framework, web font or script; the BAC-7 cancel confirmation is a page or state, not a script-driven dialog",
+        "Breakpoints follow the PRD's device NFR (desktop, 1280 px and wider): no mobile layout or mobile breakpoint is designed",
+        "Each screen spec in docs/ux/screens/ has a states table naming the BAC or edge case behind each state, per-role visibility, and an element table with role, accessible name and exact text; the My bookings screen has an empty state with 'You have no upcoming bookings.' and a 'Find a desk' link (BAC-6)",
+        "The prototype's data comes from the PRD's examples (Leeds, 8 December 2026, desk L2-14, check-in at 08:47) with no lorem ipsum or placeholder names, and dates are written as in the PRD ('8 December 2026')",
+        "Every open question in UX.md has an owner, a blocking flag and, when blocking, the IDs it blocks; the agent asks the human nothing outside the table; and the brand source docs/ux/brand/brand.md is cited"
+      ],
+      "checks": [
+        {
+          "id": "C1",
+          "text": "UX.md Status is exactly 'Ready for review' (not Draft, not Approved)",
+          "check": "file-matches",
+          "args": {
+            "file": "docs/ux/UX.md",
+            "patterns": ["^\\*\\*Status:\\*\\* Ready for review\\s*$"],
+            "show": "^\\s*\\**Status\\**:"
+          }
+        },
+        {
+          "id": "C2",
+          "text": "The PRD, architecture, ADRs, CONSTRAINTS.md and docs/ux/brand/ are byte-for-byte unchanged, and no test plan or feature file is created",
+          "check": "unchanged",
+          "args": {
+            "paths": ["docs/PRD.md", "docs/ARCHITECTURE.md", "docs/adr", "CONSTRAINTS.md", "docs/TEST-PLAN.md", "tests/features", "docs/ux/brand"]
+          }
+        },
+        {
+          "id": "C3",
+          "text": "Every FR is classified Screen (naming an inventory SCR-n), Email, Background or Non-UI with a reason; FR-3 is Email only and FR-8 includes Screen",
+          "check": "frs-classified",
+          "args": {
+            "expect": {
+              "FR-3": { "is": ["Email"] },
+              "FR-8": { "includes": ["Screen"] }
+            }
+          }
+        },
+        {
+          "id": "C4",
+          "text": "DESIGN-SYSTEM.md's contrast ratios match tokens.css, every Pass/Fail agrees with its ratio, every colour/background pair set together in the prototype CSS has a passing row, and Larkspur Sky (#2E8BD8) is never a text colour",
+          "check": "contrast-recomputed",
+          "args": {
+            "failingColour": "#2E8BD8"
+          }
+        },
+        {
+          "id": "C5",
+          "text": "Every var(--x) is defined in tokens.css; no raw colour and no custom property definition outside tokens.css",
+          "check": "tokens-defined"
+        },
+        {
+          "id": "C6",
+          "text": "One prototype page per screen state in the inventory (scr-NN-<slug>--<state>.html), none for unlisted states, and the 'Prototype, not functional' banner and a <main> landmark on every page",
+          "check": "page-per-state"
+        },
+        {
+          "id": "C7",
+          "text": "Every relative href, src and form action in the prototype resolves, including #fragments, and index.html exists",
+          "check": "links-resolve"
+        },
+        {
+          "id": "C8",
+          "text": "No <script>, inline event handler, javascript: URL or http(s):// URL anywhere under docs/ux/",
+          "check": "no-script-or-remote"
+        },
+        {
+          "id": "C9",
+          "text": "The quoted copy of every BAC whose FR is a Screen appears verbatim on a page of that FR's screen(s), and no page has lorem ipsum",
+          "check": "bac-copy-verbatim"
+        },
+        {
+          "id": "C10",
+          "text": "The agent reports the checklist results by item ID, U1 to U15, one line each with pass or fail",
+          "check": "final-report-lists",
+          "args": {
+            "prefix": "U",
+            "from": 1,
+            "to": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "execution",
+      "prompt": "Design the screens and a clickable prototype from docs/PRD.md so we can show it at the design review.",
+      "expected_output": "A refusal: the PRD is in Draft, so nothing is written under docs/ux/ and the human is routed to the BA (write-prd), even though the architecture is at Ready for design review, names a front-end stack and brand input exists. No U1–U15 checklist is printed.",
+      "files": [
+        "ux-larkspur-draft-prd"
+      ],
+      "timeout_minutes": 10,
+      "expectations": [
+        "The agent reads the PRD's Status and identifies it as Draft before designing anything",
+        "The agent tells the human the PRD must reach In Review or Approved first and routes them to the BA / write-prd",
+        "The agent does not change the PRD's status or content to get past the gate, and does not offer a 'draft' design anyway",
+        "The agent does not print a U1–U15 checklist with pass or fail results"
+      ],
+      "checks": [
+        {
+          "id": "C1",
+          "text": "Nothing is written under docs/ux/ (brand input unchanged, no new file), and the PRD, architecture, ADRs and CONSTRAINTS.md are unchanged",
+          "check": "unchanged",
+          "args": {
+            "paths": ["docs/ux", "docs/PRD.md", "docs/ARCHITECTURE.md", "docs/adr", "CONSTRAINTS.md"]
+          }
+        }
+      ]
+    }
+  ]
+}

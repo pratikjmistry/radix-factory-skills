@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "radix-factory-skills",
-      "version": "0.9.1",
+      "version": "0.10.0",
       "source": "./",
       "description": "Production-grade engineering skills covering every phase of software development: spec, plan, build, verify, review, and ship.",
       "homepage": "https://github.com/pratikjmistry/radix-factory-skills",
